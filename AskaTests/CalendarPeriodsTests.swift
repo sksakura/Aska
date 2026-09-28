@@ -92,7 +92,8 @@ struct CalendarPeriodsTests {
     @Test("FC10: границы месяца — окончание 1-го числа входит, начало 1-го следующего месяца — нет")
     func monthBoundaries() {
         let endsOnFirst = [Period(start: d(8, 28), end: d(9, 1))]
-        #expect(month(9, periods: endsOnFirst, today: d(9, 10)).contains(fact(d(8, 28), d(9, 1))))
+        let september = month(9, periods: endsOnFirst, today: d(9, 10))
+        #expect(september.first == fact(d(8, 28), d(9, 1)))
         // 3 сент + 28 = 1 окт
         let forecastOnFirst = [Period(start: d(9, 1), end: d(9, 3))]
         #expect(month(9, periods: forecastOnFirst, today: d(9, 10)) == [fact(d(9, 1), d(9, 3))])
@@ -159,7 +160,9 @@ struct CalendarPeriodsStoreTests {
             CalendarPeriod(start: d0(9, 20, 0), end: d0(9, 25, 0), startCertainty: .fact, endCertainty: .forecast),
         ])
         let october = try store.periods(inMonthOf: d0(10, 10, 0), settings: settings)
-        #expect(october.allSatisfy(\.isForecast))
+        // rethrows calls inside #expect are treated as throwing, so evaluate outside
+        let allForecast = october.allSatisfy { $0.isForecast }
+        #expect(allForecast)
         #expect(october.first?.start == d0(10, 23, 0))
     }
 }
