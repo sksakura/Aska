@@ -36,6 +36,16 @@ struct CycleStore {
         return Period.derive(from: all.map { (kind: $0.kind, date: $0.date) })
     }
 
+    /// Periods overlapping the calendar month that contains `date`: recorded ones (fact)
+    /// and predicted ones (forecast); see `CalendarPeriods.forMonth` for the forecast rules.
+    func periods(inMonthOf date: Date, settings: UserSettings) throws -> [CalendarPeriod] {
+        let recorded = try periods()
+        return CalendarPeriods.forMonth(containing: date, periods: recorded,
+                                        cycleLength: settings.cycleLength,
+                                        periodLength: settings.periodLength,
+                                        today: now(), calendar: calendar)
+    }
+
     /// Turns a calendar day picked in the UI ("today", "yesterday", a date picker) into an event time.
     /// Today means the current moment; for a past day a start is its first moment
     /// and a stop is its last, so that day is fully inside the period.

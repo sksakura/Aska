@@ -28,7 +28,7 @@ struct MainView: View {
         NavigationStack {
             List {
                 Section {
-                    StatusView(latest: latest, settings: settings)
+                    StatusView(periods: periods, settings: settings)
                     actionButton
                     if let lastEntered {
                         Button(undoTitle(for: lastEntered), role: .destructive) { confirmUndo = true }
@@ -202,8 +202,10 @@ private struct DayPickerSheet: View {
 }
 
 private struct StatusView: View {
-    let latest: Period?
+    let periods: [Period]
     let settings: UserSettings
+
+    private var latest: Period? { periods.last }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -214,11 +216,15 @@ private struct StatusView: View {
                     Text("Период идёт: день \(day)").font(.title2.bold())
                     Text("Обычно длится \(settings.periodLength) дн.").foregroundStyle(.secondary)
                 } else {
-                    let next = Calendar.current.date(byAdding: .day, value: settings.cycleLength, to: latest.start) ?? .now
                     Text("😊").font(.system(size: 56))
                     Text("День цикла: \(day)").font(.title2.bold())
-                    Text("Следующий период ≈ \(next.formatted(.dateTime.day().month()))")
-                        .foregroundStyle(.secondary)
+                    if let next = CalendarPeriods.nextForecast(periods: periods,
+                                                               cycleLength: settings.cycleLength,
+                                                               periodLength: settings.periodLength,
+                                                               today: .now) {
+                        Text("Следующий период ≈ \(next.start.formatted(.dateTime.day().month()))")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } else {
                 Text("😊").font(.system(size: 56))
