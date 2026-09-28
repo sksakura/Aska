@@ -87,6 +87,8 @@ jobs:
     # Runs the app on a simulator with demo data and captures every screen, light and dark
     needs: test
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
 
@@ -138,3 +140,24 @@ jobs:
         with:
           name: Screenshots
           path: screenshots
+
+      - name: Publish to the "screenshots" branch
+        # Easy to view on GitHub (also from a phone) without downloading a zip
+        if: github.event_name == 'push'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd screenshots
+          {
+            echo "# Screenshots"
+            echo
+            echo "Branch \`${GITHUB_REF_NAME}\`, commit ${GITHUB_SHA}"
+            echo
+            for f in light-*.png dark-*.png; do echo "### $f"; echo; echo "<img src=\"$f\" width=\"300\">"; echo; done
+          } > README.md
+          git init -q -b screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Screenshots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots

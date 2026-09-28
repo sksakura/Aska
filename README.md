@@ -242,6 +242,7 @@ xcodebuild test -project Aska.xcodeproj -scheme Aska -destination 'platform=iOS 
 3. **Screenshots** — тоже после тестов: запускает приложение на симуляторе iPhone с демо-данными
    и снимает все экраны в светлой и тёмной теме (артефакт `Screenshots`):
    `onboarding`, `today` (14-й день цикла), `today-active` (идёт 3-й день), `calendar`, `profile`.
+   При push картинки также публикуются в ветку `screenshots` — их удобно смотреть прямо на GitHub.
 
 Демо-режим есть только в Debug-сборке: запуск с аргументом `-demo <сценарий>`
 (`Aska/DemoMode.swift`). Данные в нём — в памяти, настоящие данные и настройки не трогаются,
