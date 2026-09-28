@@ -139,7 +139,7 @@ struct RoundStepper: View {
     @Environment(\.theme) private var theme
     var value: Int
     var range: ClosedRange<Int>
-    var valueWidth: CGFloat = 20
+    var valueWidth: CGFloat = 24
     var onChange: (Int) -> Void
 
     var body: some View {
@@ -150,7 +150,9 @@ struct RoundStepper: View {
                 .font(.system(size: 17))
                 .monospacedDigit()
                 .foregroundStyle(theme.ink)
-                .frame(width: valueWidth)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: valueWidth)
             stepButton("+", enabled: value < range.upperBound) { onChange(value + 1) }
                 .accessibilityLabel("Больше")
         }
