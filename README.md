@@ -21,6 +21,7 @@ Aska/                 код приложения
   CalendarView.swift  экран «Календарь»
   ProfileView.swift   экран «Профиль» и первая настройка
   Reminders.swift     локальное напоминание накануне прогноза
+  DemoMode.swift      демо-данные для скриншотов (только Debug)
 AskaTests/            тестовый таргет (Swift Testing)
   CycleStoreTests.swift  корнер-кейсы сборки периодов, API и подсчёта дней
   SettingsTests.swift    валидация настроек и их синхронизация
@@ -238,6 +239,13 @@ xcodebuild test -project Aska.xcodeproj -scheme Aska -destination 'platform=iOS 
    При падении результаты (`TestResults.xcresult`) прикладываются к запуску.
 2. **Build IPA** — запускается **только если тесты прошли** (`needs: test`).
    Собирает неподписанный `Aska-unsigned.ipa` и выкладывает его в артефакты запуска.
+3. **Screenshots** — тоже после тестов: запускает приложение на симуляторе iPhone с демо-данными
+   и снимает все экраны в светлой и тёмной теме (артефакт `Screenshots`):
+   `onboarding`, `today` (14-й день цикла), `today-active` (идёт 3-й день), `calendar`, `profile`.
+
+Демо-режим есть только в Debug-сборке: запуск с аргументом `-demo <сценарий>`
+(`Aska/DemoMode.swift`). Данные в нём — в памяти, настоящие данные и настройки не трогаются,
+напоминания не планируются.
 
 ## Установка на телефон
 
