@@ -6,6 +6,7 @@ enum CycleError: LocalizedError, Equatable {
     case noStartBefore
     case nothingToUndo
     case noStopOnDay
+    case noStartOnDay
 
     var errorDescription: String? {
         switch self {
@@ -13,6 +14,7 @@ enum CycleError: LocalizedError, Equatable {
         case .noStartBefore: "До этой даты нет отметки о начале периода."
         case .nothingToUndo: "Отменять нечего."
         case .noStopOnDay: "В этот день нет отметки об окончании."
+        case .noStartOnDay: "В этот день нет отметки о начале."
         }
     }
 }
@@ -83,13 +85,24 @@ struct CycleStore {
     /// Deletes every stop mark on the given calendar day. Returns how many were deleted.
     @discardableResult
     func deleteStop(onDay day: Date) throws -> Int {
-        let stops = try events().filter { $0.kind == .stop && calendar.isDate($0.date, inSameDayAs: day) }
-        guard !stops.isEmpty else { throw CycleError.noStopOnDay }
-        for stop in stops {
-            context.delete(stop)
+        try delete(.stop, onDay: day, orThrow: .noStopOnDay)
+    }
+
+    /// Deletes every start mark on the given calendar day. Returns how many were deleted.
+    /// Stops left without a start before them are kept but ignored when periods are derived.
+    @discardableResult
+    func deleteStart(onDay day: Date) throws -> Int {
+        try delete(.start, onDay: day, orThrow: .noStartOnDay)
+    }
+
+    private func delete(_ kind: EventKind, onDay day: Date, orThrow error: CycleError) throws -> Int {
+        let matching = try events().filter { $0.kind == kind && calendar.isDate($0.date, inSameDayAs: day) }
+        guard !matching.isEmpty else { throw error }
+        for event in matching {
+            context.delete(event)
         }
         try context.save()
-        return stops.count
+        return matching.count
     }
 
     private func insert(_ kind: EventKind, at date: Date) throws -> CycleEvent {

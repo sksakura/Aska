@@ -39,17 +39,21 @@ struct MainView: View {
                         ForEach(periods.reversed(), id: \.start) { period in
                             PeriodRow(period: period)
                                 .swipeActions {
+                                    Button("Удалить начало", role: .destructive) {
+                                        perform { try store.deleteStart(onDay: period.start) }
+                                    }
                                     if let end = period.end {
-                                        Button("Удалить окончание", role: .destructive) {
+                                        Button("Удалить окончание") {
                                             perform { try store.deleteStop(onDay: end) }
                                         }
+                                        .tint(.orange)
                                     }
                                 }
                         }
                     } header: {
                         Text("История")
                     } footer: {
-                        Text("Смахните период влево, чтобы удалить отметку окончания.")
+                        Text("Смахните период влево, чтобы удалить отметку начала или окончания.")
                     }
                 }
             }

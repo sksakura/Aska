@@ -292,6 +292,60 @@ struct CycleStoreTests {
         #expect(try periods() == [Period(start: now - 40 * day, end: now - day)])
     }
 
+    // MARK: deleteStart
+
+    @Test("DSt1: удаление лишнего раннего старта снова показывает короткий период")
+    func deleteEarlyStartRestoresShort() throws {
+        try store.startCycle(at: now - 8 * day)
+        try store.startCycle(at: now - 10 * day)
+        try store.stopCycle(at: now - 4 * day)
+        #expect(try store.deleteStart(onDay: now - 10 * day) == 1)
+        #expect(try periods() == [Period(start: now - 8 * day, end: now - 4 * day)])
+    }
+
+    @Test("DSt2: удаление единственного старта убирает период, осиротевший стоп игнорируется")
+    func deleteOnlyStart() throws {
+        try store.startCycle(at: now - 5 * day)
+        try store.stopCycle(at: now - day)
+        try store.deleteStart(onDay: now - 5 * day)
+        #expect(try periods().isEmpty)
+        #expect(try store.events().map(\.kind) == [.stop])
+    }
+
+    @Test("DSt3: в выбранный день нет старта — ошибка, данные не меняются")
+    func deleteStartMissingDay() throws {
+        try store.startCycle(at: now - 5 * day)
+        #expect(throws: CycleError.noStartOnDay) { try store.deleteStart(onDay: now - 4 * day) }
+        #expect(try store.events().count == 1)
+    }
+
+    @Test("DSt4: удаляются только старты, стоп в тот же день остаётся")
+    func deleteStartKeepsStopSameDay() throws {
+        try store.startCycle(at: now - day)
+        try store.stopCycle(at: now - day + 3600)
+        try store.deleteStart(onDay: now - day)
+        #expect(try store.events().map(\.kind) == [.stop])
+    }
+
+    @Test("DSt5: несколько стартов в один день удаляются все")
+    func deleteAllStartsOfDay() throws {
+        let dayStart = store.calendar.startOfDay(for: now - 3 * day)
+        try store.startCycle(at: dayStart + 3600)
+        try store.startCycle(at: dayStart + 7200)
+        #expect(try store.deleteStart(onDay: dayStart) == 2)
+        #expect(try store.events().isEmpty)
+    }
+
+    @Test("DSt6: удаление старта второго периода присоединяет его стоп к первому")
+    func deleteStartOfSecondPeriod() throws {
+        try store.startCycle(at: now - 40 * day)
+        try store.stopCycle(at: now - 35 * day)
+        try store.startCycle(at: now - 5 * day)
+        try store.stopCycle(at: now - day)
+        try store.deleteStart(onDay: now - 5 * day)
+        #expect(try periods() == [Period(start: now - 40 * day, end: now - day)])
+    }
+
     // MARK: - Дата события из выбранного дня (сегодня / вчера / позавчера / календарь)
 
     @Test("M1: «сегодня» — текущий момент для старта и стопа")
