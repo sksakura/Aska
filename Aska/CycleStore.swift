@@ -2,95 +2,100 @@ import Foundation
 import SwiftData
 
 enum CycleError: LocalizedError, Equatable {
-    case alreadyActive
-    case noActiveCycle
-    case nothingToUndo
     case dateInFuture
-    case startBeforePreviousEnd
-    case endBeforeStart
+    case noStartBefore
+    case nothingToUndo
+    case noStopOnDay
 
     var errorDescription: String? {
         switch self {
-        case .alreadyActive: "Период уже идёт — сначала отметьте его окончание."
-        case .noActiveCycle: "Сейчас нет начатого периода."
-        case .nothingToUndo: "Отменять нечего."
         case .dateInFuture: "Дата не может быть в будущем."
-        case .startBeforePreviousEnd: "Начало не может быть раньше окончания прошлого периода."
-        case .endBeforeStart: "Окончание не может быть раньше начала."
+        case .noStartBefore: "До этой даты нет отметки о начале периода."
+        case .nothingToUndo: "Отменять нечего."
+        case .noStopOnDay: "В этот день нет отметки об окончании."
         }
     }
 }
 
-enum UndoResult: Equatable {
-    /// The last action was a stop: the end was removed and the period is ongoing again.
-    case reopened
-    /// The last action was a start: the whole record was deleted.
-    case deleted
-}
-
-/// The app's cycle "API": start, stop and undo on top of SwiftData.
-/// The latest cycle (by start date) defines the current state, so the last action
-/// is always derivable from data: open latest cycle = start, closed = stop.
+/// The app's cycle "API" on top of SwiftData. Only events are stored;
+/// periods are derived with `Period.derive` whenever they are needed.
 @MainActor
 struct CycleStore {
     let context: ModelContext
     var now: () -> Date = { Date.now }
+    var calendar: Calendar = .current
 
-    func latest() throws -> Cycle? {
-        var descriptor = FetchDescriptor<Cycle>(sortBy: [SortDescriptor(\.start, order: .reverse)])
-        descriptor.fetchLimit = 1
-        return try context.fetch(descriptor).first
+    func events() throws -> [CycleEvent] {
+        try context.fetch(FetchDescriptor<CycleEvent>(sortBy: [SortDescriptor(\.date)]))
     }
 
-    /// Earliest moment a new period may start: the end of the previous one (nil = no limit).
-    func earliestStart() throws -> Date? {
-        try latest()?.end
+    func periods() throws -> [Period] {
+        let all = try events()
+        return Period.derive(from: all.map { (kind: $0.kind, date: $0.date) })
     }
 
-    /// Turns a calendar day picked in the UI ("today", "yesterday", a date picker) into a start time.
-    /// Today means the current moment, a past day means its first moment. When the picked day is the
-    /// day the previous period ended, the start is moved to that end so the two don't overlap.
-    static func startDate(forDay day: Date, now: Date, notBefore minimum: Date?,
+    /// Turns a calendar day picked in the UI ("today", "yesterday", a date picker) into an event time.
+    /// Today means the current moment; for a past day a start is its first moment
+    /// and a stop is its last, so that day is fully inside the period.
+    static func eventDate(for kind: EventKind, onDay day: Date, now: Date,
                           calendar: Calendar = .current) -> Date {
-        var date = calendar.isDate(day, inSameDayAs: now) ? now : calendar.startOfDay(for: day)
-        if let minimum, date < minimum, calendar.isDate(date, inSameDayAs: minimum) {
-            date = minimum
+        if calendar.isDate(day, inSameDayAs: now) {
+            return now
         }
-        return date
+        let dayStart = calendar.startOfDay(for: day)
+        switch kind {
+        case .start:
+            return dayStart
+        case .stop:
+            let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+            return nextDay.addingTimeInterval(-1)
+        }
     }
 
     @discardableResult
-    func startCycle(at date: Date) throws -> Cycle {
+    func startCycle(at date: Date) throws -> CycleEvent {
         guard date <= now() else { throw CycleError.dateInFuture }
-        if let last = try latest() {
-            guard let lastEnd = last.end else { throw CycleError.alreadyActive }
-            guard date >= lastEnd else { throw CycleError.startBeforePreviousEnd }
-        }
-        let cycle = Cycle(start: date)
-        context.insert(cycle)
-        try context.save()
-        return cycle
-    }
-
-    func stopCycle(at date: Date? = nil) throws {
-        let date = date ?? now()
-        guard date <= now() else { throw CycleError.dateInFuture }
-        guard let last = try latest(), last.isActive else { throw CycleError.noActiveCycle }
-        guard date >= last.start else { throw CycleError.endBeforeStart }
-        last.end = date
-        try context.save()
+        return try insert(.start, at: date)
     }
 
     @discardableResult
-    func undoLast() throws -> UndoResult {
-        guard let last = try latest() else { throw CycleError.nothingToUndo }
-        if last.isActive {
-            context.delete(last)
-            try context.save()
-            return .deleted
+    func stopCycle(at date: Date) throws -> CycleEvent {
+        guard date <= now() else { throw CycleError.dateInFuture }
+        guard try events().contains(where: { $0.kind == .start && $0.date <= date }) else {
+            throw CycleError.noStartBefore
         }
-        last.end = nil
+        return try insert(.stop, at: date)
+    }
+
+    /// Removes the most recently entered event, whatever its date.
+    /// Undoing a stop makes the period ongoing again; undoing a start removes it.
+    @discardableResult
+    func undoLast() throws -> EventKind {
+        var descriptor = FetchDescriptor<CycleEvent>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 1
+        guard let last = try context.fetch(descriptor).first else { throw CycleError.nothingToUndo }
+        let kind = last.kind
+        context.delete(last)
         try context.save()
-        return .reopened
+        return kind
+    }
+
+    /// Deletes every stop mark on the given calendar day. Returns how many were deleted.
+    @discardableResult
+    func deleteStop(onDay day: Date) throws -> Int {
+        let stops = try events().filter { $0.kind == .stop && calendar.isDate($0.date, inSameDayAs: day) }
+        guard !stops.isEmpty else { throw CycleError.noStopOnDay }
+        for stop in stops {
+            context.delete(stop)
+        }
+        try context.save()
+        return stops.count
+    }
+
+    private func insert(_ kind: EventKind, at date: Date) throws -> CycleEvent {
+        let event = CycleEvent(kind: kind, date: date)
+        context.insert(event)
+        try context.save()
+        return event
     }
 }

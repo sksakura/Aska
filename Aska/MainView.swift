@@ -1,20 +1,28 @@
 import SwiftUI
 import SwiftData
 
+extension EventKind: Identifiable {
+    var id: Self { self }
+}
+
 struct MainView: View {
     let settings: UserSettings
 
     @Environment(\.modelContext) private var context
-    @Query(sort: \Cycle.start, order: .reverse) private var cycles: [Cycle]
+    @Query(sort: \CycleEvent.date) private var events: [CycleEvent]
     @State private var showSettings = false
     @State private var confirmUndo = false
     @State private var errorMessage: String?
-    @State private var chooseStartDay = false
-    @State private var showDatePicker = false
+    /// Which mark the quick "today / yesterday / …" dialog is for.
+    @State private var quickPickKind: EventKind?
+    /// Which mark the calendar sheet is for.
+    @State private var calendarKind: EventKind?
     @State private var pickedDay = Date.now
 
     private var store: CycleStore { CycleStore(context: context) }
-    private var latest: Cycle? { cycles.first }
+    private var periods: [Period] { Period.derive(from: events.map { (kind: $0.kind, date: $0.date) }) }
+    private var latest: Period? { periods.last }
+    private var lastEntered: CycleEvent? { events.max { $0.createdAt < $1.createdAt } }
 
     var body: some View {
         NavigationStack {
@@ -22,13 +30,26 @@ struct MainView: View {
                 Section {
                     StatusView(latest: latest, settings: settings)
                     actionButton
-                    if latest != nil {
-                        Button(undoTitle, role: .destructive) { confirmUndo = true }
+                    if let lastEntered {
+                        Button(undoTitle(for: lastEntered), role: .destructive) { confirmUndo = true }
                     }
                 }
-                if !cycles.isEmpty {
-                    Section("История") {
-                        ForEach(cycles) { CycleRow(cycle: $0) }
+                if !periods.isEmpty {
+                    Section {
+                        ForEach(periods.reversed(), id: \.start) { period in
+                            PeriodRow(period: period)
+                                .swipeActions {
+                                    if let end = period.end {
+                                        Button("Удалить окончание", role: .destructive) {
+                                            perform { try store.deleteStop(onDay: end) }
+                                        }
+                                    }
+                                }
+                        }
+                    } header: {
+                        Text("История")
+                    } footer: {
+                        Text("Смахните период влево, чтобы удалить отметку окончания.")
                     }
                 }
             }
@@ -42,26 +63,37 @@ struct MainView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(settings: settings)
             }
-            .confirmationDialog(undoTitle, isPresented: $confirmUndo, titleVisibility: .visible) {
-                Button(undoTitle, role: .destructive) { perform { try store.undoLast() } }
+            .confirmationDialog(lastEntered.map { undoTitle(for: $0) } ?? "", isPresented: $confirmUndo,
+                                titleVisibility: .visible) {
+                if let lastEntered {
+                    Button(undoTitle(for: lastEntered), role: .destructive) {
+                        perform { try store.undoLast() }
+                    }
+                }
             } message: {
-                Text(latest?.isActive == true
-                     ? "Запись о начале периода будет удалена."
-                     : "Период снова будет считаться идущим.")
+                Text(lastEntered?.kind == .stop
+                     ? "Отметка окончания будет удалена."
+                     : "Отметка начала будет удалена.")
             }
-            .confirmationDialog("Когда начался период?", isPresented: $chooseStartDay, titleVisibility: .visible) {
-                ForEach(quickStartDays, id: \.offset) { option in
-                    Button(option.title) { start(onDay: option.day) }
+            .confirmationDialog(quickPickKind == .stop ? "Когда закончился период?" : "Когда начался период?",
+                                isPresented: Binding(
+                                    get: { quickPickKind != nil },
+                                    set: { if !$0 { quickPickKind = nil } }
+                                ),
+                                titleVisibility: .visible,
+                                presenting: quickPickKind) { kind in
+                ForEach(quickDays(for: kind), id: \.offset) { option in
+                    Button(option.title) { add(kind, onDay: option.day) }
                 }
                 Button("Выбрать дату…") {
                     pickedDay = .now
-                    showDatePicker = true
+                    calendarKind = kind
                 }
             }
-            .sheet(isPresented: $showDatePicker) {
-                StartDatePicker(day: $pickedDay, range: startDayRange) {
-                    showDatePicker = false
-                    start(onDay: pickedDay)
+            .sheet(item: $calendarKind) { kind in
+                DayPickerSheet(kind: kind, day: $pickedDay, range: dayRange(for: kind)) {
+                    calendarKind = nil
+                    add(kind, onDay: pickedDay)
                 }
             }
             .alert("Не получилось", isPresented: Binding(
@@ -78,31 +110,34 @@ struct MainView: View {
     @ViewBuilder
     private var actionButton: some View {
         if latest?.isActive == true {
-            Button("Период закончился") { perform { try store.stopCycle() } }
+            Button("Период закончился") { quickPickKind = .stop }
                 .buttonStyle(.borderedProminent)
                 .frame(maxWidth: .infinity)
         } else {
-            Button("Период начался") { chooseStartDay = true }
+            Button("Период начался") { quickPickKind = .start }
                 .buttonStyle(.borderedProminent)
                 .tint(.pink)
                 .frame(maxWidth: .infinity)
         }
     }
 
-    /// Earliest allowed start: the end of the previous period.
-    private var previousEnd: Date? { latest?.end }
-
-    private var startDayRange: ClosedRange<Date> {
-        (previousEnd ?? .distantPast)...Date.now
+    /// A stop can't be earlier than the start of the ongoing period; a start has no lower limit.
+    private func earliestDay(for kind: EventKind) -> Date? {
+        kind == .stop ? latest?.start : nil
     }
 
-    /// Today / yesterday / the day before, minus days before the previous period ended.
-    private var quickStartDays: [(offset: Int, title: String, day: Date)] {
+    private func dayRange(for kind: EventKind) -> ClosedRange<Date> {
+        (earliestDay(for: kind) ?? .distantPast)...Date.now
+    }
+
+    /// Today / yesterday / the day before, minus days outside the allowed range.
+    private func quickDays(for kind: EventKind) -> [(offset: Int, title: String, day: Date)] {
         let calendar = Calendar.current
         var options: [(offset: Int, title: String, day: Date)] = []
         for (offset, title) in ["Сегодня", "Вчера", "Позавчера"].enumerated() {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: .now) else { continue }
-            if let previousEnd, calendar.startOfDay(for: day) < calendar.startOfDay(for: previousEnd) {
+            if let earliest = earliestDay(for: kind),
+               calendar.startOfDay(for: day) < calendar.startOfDay(for: earliest) {
                 continue
             }
             options.append((offset: offset, title: title, day: day))
@@ -110,13 +145,19 @@ struct MainView: View {
         return options
     }
 
-    private func start(onDay day: Date) {
-        let date = CycleStore.startDate(forDay: day, now: .now, notBefore: previousEnd)
-        perform { try store.startCycle(at: date) }
+    private func add(_ kind: EventKind, onDay day: Date) {
+        let date = CycleStore.eventDate(for: kind, onDay: day, now: .now)
+        perform {
+            switch kind {
+            case .start: try store.startCycle(at: date)
+            case .stop: try store.stopCycle(at: date)
+            }
+        }
     }
 
-    private var undoTitle: String {
-        latest?.isActive == true ? "Отменить начало" : "Отменить окончание"
+    private func undoTitle(for event: CycleEvent) -> String {
+        let day = event.date.formatted(.dateTime.day().month())
+        return event.kind == .stop ? "Отменить окончание \(day)" : "Отменить начало \(day)"
     }
 
     private func perform(_ action: () throws -> Void) {
@@ -128,7 +169,8 @@ struct MainView: View {
     }
 }
 
-private struct StartDatePicker: View {
+private struct DayPickerSheet: View {
+    let kind: EventKind
     @Binding var day: Date
     let range: ClosedRange<Date>
     let onDone: () -> Void
@@ -136,10 +178,11 @@ private struct StartDatePicker: View {
 
     var body: some View {
         NavigationStack {
-            DatePicker("День начала", selection: $day, in: range, displayedComponents: .date)
+            DatePicker(kind == .stop ? "День окончания" : "День начала",
+                       selection: $day, in: range, displayedComponents: .date)
                 .datePickerStyle(.graphical)
                 .padding()
-                .navigationTitle("Начало периода")
+                .navigationTitle(kind == .stop ? "Окончание периода" : "Начало периода")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -155,7 +198,7 @@ private struct StartDatePicker: View {
 }
 
 private struct StatusView: View {
-    let latest: Cycle?
+    let latest: Period?
     let settings: UserSettings
 
     var body: some View {
@@ -185,17 +228,17 @@ private struct StatusView: View {
     }
 }
 
-private struct CycleRow: View {
-    let cycle: Cycle
+private struct PeriodRow: View {
+    let period: Period
 
     var body: some View {
         HStack {
-            Text(cycle.start.formatted(.dateTime.day().month()))
+            Text(period.start.formatted(.dateTime.day().month()))
             Text("–")
-            if let end = cycle.end {
+            if let end = period.end {
                 Text(end.formatted(.dateTime.day().month()))
                 Spacer()
-                Text("\(Calendar.current.dayNumber(from: cycle.start, to: end)) дн.")
+                Text("\(Calendar.current.dayNumber(from: period.start, to: end)) дн.")
                     .foregroundStyle(.secondary)
             } else {
                 Text("сейчас")

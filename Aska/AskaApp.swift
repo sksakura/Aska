@@ -12,7 +12,7 @@ struct AskaApp: App {
         }
         // Default configuration syncs through the iCloud container from the entitlements
         // when the app is signed with it, and stays local otherwise.
-        .modelContainer(for: Cycle.self)
+        .modelContainer(for: CycleEvent.self)
     }
 }
 

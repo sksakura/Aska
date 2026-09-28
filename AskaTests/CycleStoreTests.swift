@@ -3,6 +3,75 @@ import SwiftData
 import Testing
 @testable import Aska
 
+// MARK: - Сборка периодов из событий (чистая функция)
+
+struct PeriodDerivationTests {
+    let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+    let day: TimeInterval = 86_400
+
+    func d(_ n: Int) -> Date { t0 + Double(n) * day }
+
+    @Test("PR1: нет событий — нет периодов")
+    func empty() {
+        #expect(Period.derive(from: []).isEmpty)
+    }
+
+    @Test("PR2: только старт — идущий период")
+    func onlyStart() {
+        #expect(Period.derive(from: [(.start, d(0))]) == [Period(start: d(0), end: nil)])
+    }
+
+    @Test("PR3: старт и стоп — закрытый период")
+    func startStop() {
+        #expect(Period.derive(from: [(.start, d(0)), (.stop, d(4))]) == [Period(start: d(0), end: d(4))])
+    }
+
+    @Test("PR4: два цикла подряд — два периода")
+    func twoPeriods() {
+        let events: [(kind: EventKind, date: Date)] = [(.start, d(0)), (.stop, d(4)), (.start, d(28)), (.stop, d(33))]
+        #expect(Period.derive(from: events) == [Period(start: d(0), end: d(4)), Period(start: d(28), end: d(33))])
+    }
+
+    @Test("PR5: два старта подряд — длинный перекрывает короткий (берётся ранний)")
+    func twoStartsMerge() {
+        let events: [(kind: EventKind, date: Date)] = [(.start, d(2)), (.start, d(0)), (.stop, d(5))]
+        #expect(Period.derive(from: events) == [Period(start: d(0), end: d(5))])
+    }
+
+    @Test("PR6: два стопа подряд — длинный перекрывает короткий (берётся поздний)")
+    func twoStopsMerge() {
+        let events: [(kind: EventKind, date: Date)] = [(.start, d(0)), (.stop, d(3)), (.stop, d(6))]
+        #expect(Period.derive(from: events) == [Period(start: d(0), end: d(6))])
+    }
+
+    @Test("PR7: два старта и два стопа — один период по крайним датам")
+    func nestedPeriods() {
+        let events: [(kind: EventKind, date: Date)] = [(.start, d(0)), (.start, d(1)), (.stop, d(3)), (.stop, d(5))]
+        #expect(Period.derive(from: events) == [Period(start: d(0), end: d(5))])
+    }
+
+    @Test("PR8: стоп без старта перед ним игнорируется")
+    func orphanStop() {
+        let events: [(kind: EventKind, date: Date)] = [(.stop, d(0)), (.start, d(2)), (.stop, d(5))]
+        #expect(Period.derive(from: events) == [Period(start: d(2), end: d(5))])
+    }
+
+    @Test("PR9: старт и стоп в один момент — старт идёт первым, период нулевой длины")
+    func sameMoment() {
+        let events: [(kind: EventKind, date: Date)] = [(.stop, d(0)), (.start, d(0))]
+        #expect(Period.derive(from: events) == [Period(start: d(0), end: d(0))])
+    }
+
+    @Test("PR10: порядок входных событий не важен")
+    func unsortedInput() {
+        let events: [(kind: EventKind, date: Date)] = [(.stop, d(33)), (.start, d(28)), (.stop, d(4)), (.start, d(0))]
+        #expect(Period.derive(from: events).count == 2)
+        #expect(Period.derive(from: events).last == Period(start: d(28), end: d(33)))
+    }
+}
+
+// MARK: - API
+
 @MainActor
 struct CycleStoreTests {
     let container: ModelContainer
@@ -13,278 +82,252 @@ struct CycleStoreTests {
 
     init() throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-        container = try ModelContainer(for: Cycle.self, configurations: config)
+        container = try ModelContainer(for: CycleEvent.self, configurations: config)
         context = container.mainContext
         let fixedNow = now
-        store = CycleStore(context: context, now: { fixedNow })
-    }
-
-    func all() throws -> [Cycle] {
-        try context.fetch(FetchDescriptor<Cycle>(sortBy: [SortDescriptor(\.start)]))
-    }
-
-    // MARK: - startCycle
-
-    @Test("S1: старт на пустой истории создаёт открытый цикл")
-    func startOnEmpty() throws {
-        try store.startCycle(at: now - day)
-        let cycles = try all()
-        #expect(cycles.count == 1)
-        #expect(cycles[0].start == now - day)
-        #expect(cycles[0].end == nil)
-    }
-
-    @Test("S2: старт принимает дату и сохраняет её как есть")
-    func startStoresGivenDate() throws {
-        try store.startCycle(at: now - 3 * day - 123)
-        #expect(try all().first?.start == now - 3 * day - 123)
-    }
-
-    // MARK: - Выбор дня старта в UI (сегодня / вчера / позавчера / дата)
-
-    var utc: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
-        return calendar
+        store = CycleStore(context: context, now: { fixedNow }, calendar: calendar)
     }
 
-    @Test("SD1: «сегодня» — текущий момент")
-    func pickToday() {
-        #expect(CycleStore.startDate(forDay: now, now: now, notBefore: nil, calendar: utc) == now)
+    func periods() throws -> [Period] { try store.periods() }
+
+    // MARK: startCycle
+
+    @Test("S1: старт сохраняет событие с переданной датой")
+    func startStoresDate() throws {
+        try store.startCycle(at: now - 3 * day - 123)
+        let events = try store.events()
+        #expect(events.count == 1)
+        #expect(events[0].kind == .start)
+        #expect(events[0].date == now - 3 * day - 123)
+        #expect(try periods() == [Period(start: now - 3 * day - 123, end: nil)])
     }
 
-    @Test("SD2: «вчера» и «позавчера» — начало того дня")
-    func pickPastDays() {
-        for offset in [1, 2] {
-            let picked = utc.date(byAdding: .day, value: -offset, to: now)!
-            let result = CycleStore.startDate(forDay: picked, now: now, notBefore: nil, calendar: utc)
-            #expect(result == utc.startOfDay(for: picked))
-        }
+    @Test("S2: граница — старт ровно «сейчас» допустим, на секунду позже — нет")
+    func startFutureBoundary() throws {
+        #expect(throws: CycleError.dateInFuture) { try store.startCycle(at: now + 1) }
+        #expect(try store.events().isEmpty)
+        try store.startCycle(at: now)
+        #expect(try store.events().count == 1)
     }
 
-    @Test("SD3: выбран день окончания прошлого периода — старт сдвигается на момент окончания")
-    func pickDayOfPreviousEnd() throws {
-        let previousEnd = utc.startOfDay(for: now - 2 * day) + 15 * 3600
-        let result = CycleStore.startDate(forDay: previousEnd, now: now, notBefore: previousEnd, calendar: utc)
-        #expect(result == previousEnd)
+    @Test("S3: старт при идущем периоде разрешён — ранний старт удлиняет период")
+    func startWhileActiveExtends() throws {
+        try store.startCycle(at: now - 2 * day)
+        try store.startCycle(at: now - 4 * day)
+        #expect(try periods() == [Period(start: now - 4 * day, end: nil)])
+    }
+
+    @Test("S4: старт внутри закрытого периода не создаёт новый период")
+    func startInsideClosedPeriod() throws {
         try store.startCycle(at: now - 10 * day)
-        try store.stopCycle(at: previousEnd)
-        try store.startCycle(at: result)
-        #expect(try all().count == 2)
+        try store.stopCycle(at: now - 5 * day)
+        try store.startCycle(at: now - 8 * day)
+        #expect(try periods() == [Period(start: now - 10 * day, end: now - 5 * day)])
     }
 
-    @Test("SD4: выбран день раньше окончания прошлого — не сдвигается, API отклоняет")
-    func pickDayBeforePreviousEnd() throws {
-        let previousEnd = utc.startOfDay(for: now - 2 * day) + 15 * 3600
-        try store.startCycle(at: now - 10 * day)
-        try store.stopCycle(at: previousEnd)
-        let picked = previousEnd - day
-        let minimum = try store.earliestStart()
-        let result = CycleStore.startDate(forDay: picked, now: now, notBefore: minimum, calendar: utc)
-        #expect(result == utc.startOfDay(for: picked))
-        #expect(throws: CycleError.startBeforePreviousEnd) { try store.startCycle(at: result) }
-    }
-
-    @Test("SD5: выбран завтрашний день — API отклоняет как будущее")
-    func pickTomorrow() {
-        let result = CycleStore.startDate(forDay: now + day, now: now, notBefore: nil, calendar: utc)
-        #expect(throws: CycleError.dateInFuture) { try store.startCycle(at: result) }
-    }
-
-    @Test("SD6: earliestStart — нет ограничения на пустой истории и при идущем периоде, иначе конец прошлого")
-    func earliestStart() throws {
-        #expect(try store.earliestStart() == nil)
-        try store.startCycle(at: now - 5 * day)
-        #expect(try store.earliestStart() == nil)
-        try store.stopCycle(at: now - day)
-        #expect(try store.earliestStart() == now - day)
-    }
-
-    @Test("S3: старт после закрытого цикла создаёт новый, старый не меняется")
+    @Test("S5: старт после закрытого периода — новый период")
     func startAfterClosed() throws {
         try store.startCycle(at: now - 30 * day)
         try store.stopCycle(at: now - 25 * day)
         try store.startCycle(at: now - day)
-        let cycles = try all()
-        #expect(cycles.count == 2)
-        #expect(cycles[0].end == now - 25 * day)
-        #expect(cycles[1].end == nil)
+        #expect(try periods() == [Period(start: now - 30 * day, end: now - 25 * day), Period(start: now - day, end: nil)])
     }
 
-    @Test("S4: граница — старт ровно в момент окончания прошлого допустим")
-    func startExactlyAtPreviousEnd() throws {
-        try store.startCycle(at: now - 10 * day)
-        try store.stopCycle(at: now - 5 * day)
-        try store.startCycle(at: now - 5 * day)
-        #expect(try all().count == 2)
-    }
-
-    @Test("S5: граница — старт на секунду раньше окончания прошлого запрещён")
-    func startBeforePreviousEnd() throws {
-        try store.startCycle(at: now - 10 * day)
-        try store.stopCycle(at: now - 5 * day)
-        #expect(throws: CycleError.startBeforePreviousEnd) {
-            try store.startCycle(at: now - 5 * day - 1)
-        }
-        #expect(try all().count == 1)
-    }
-
-    @Test("S6: повторный старт при идущем периоде — ошибка, данные не меняются")
-    func startWhileActive() throws {
-        try store.startCycle(at: now - day)
-        #expect(throws: CycleError.alreadyActive) { try store.startCycle(at: now) }
-        let cycles = try all()
-        #expect(cycles.count == 1)
-        #expect(cycles[0].start == now - day)
-    }
-
-    @Test("S7: граница — старт ровно «сейчас» допустим, на секунду позже — нет")
-    func startFutureBoundary() throws {
-        #expect(throws: CycleError.dateInFuture) { try store.startCycle(at: now + 1) }
-        #expect(try all().isEmpty)
-        try store.startCycle(at: now)
-        #expect(try all().count == 1)
-    }
-
-    // MARK: - stopCycle
+    // MARK: stopCycle
 
     @Test("P1: стоп закрывает идущий период")
     func stopActive() throws {
         try store.startCycle(at: now - 5 * day)
         try store.stopCycle(at: now - day)
-        #expect(try all().first?.end == now - day)
+        #expect(try periods() == [Period(start: now - 5 * day, end: now - day)])
     }
 
     @Test("P2: граница — стоп в момент старта допустим")
     func stopAtStart() throws {
         try store.startCycle(at: now - day)
         try store.stopCycle(at: now - day)
-        #expect(try all().first?.end == now - day)
+        #expect(try periods() == [Period(start: now - day, end: now - day)])
     }
 
-    @Test("P3: граница — стоп на секунду раньше старта запрещён")
+    @Test("P3: граница — стоп на секунду раньше единственного старта запрещён")
     func stopBeforeStart() throws {
         try store.startCycle(at: now - day)
-        #expect(throws: CycleError.endBeforeStart) { try store.stopCycle(at: now - day - 1) }
-        #expect(try all().first?.end == nil)
+        #expect(throws: CycleError.noStartBefore) { try store.stopCycle(at: now - day - 1) }
+        #expect(try store.events().count == 1)
     }
 
     @Test("P4: стоп на пустой истории — ошибка")
     func stopOnEmpty() throws {
-        #expect(throws: CycleError.noActiveCycle) { try store.stopCycle() }
+        #expect(throws: CycleError.noStartBefore) { try store.stopCycle(at: now) }
     }
 
-    @Test("P5: повторный стоп — ошибка, дата окончания не перезаписывается")
-    func stopTwice() throws {
-        try store.startCycle(at: now - 5 * day)
-        try store.stopCycle(at: now - 2 * day)
-        #expect(throws: CycleError.noActiveCycle) { try store.stopCycle(at: now) }
-        #expect(try all().first?.end == now - 2 * day)
-    }
-
-    @Test("P6: стоп в будущем — ошибка")
+    @Test("P5: стоп в будущем — ошибка")
     func stopInFuture() throws {
         try store.startCycle(at: now - day)
         #expect(throws: CycleError.dateInFuture) { try store.stopCycle(at: now + 1) }
-        #expect(try all().first?.end == nil)
+        #expect(try periods().last?.isActive == true)
     }
 
-    @Test("P7: стоп меняет только последний цикл")
-    func stopTouchesOnlyLatest() throws {
-        try store.startCycle(at: now - 40 * day)
-        try store.stopCycle(at: now - 35 * day)
-        try store.startCycle(at: now - 2 * day)
-        try store.stopCycle(at: now)
-        let cycles = try all()
-        #expect(cycles[0].end == now - 35 * day)
-        #expect(cycles[1].end == now)
+    @Test("P6: второй, более поздний стоп удлиняет период")
+    func laterStopExtends() throws {
+        try store.startCycle(at: now - 10 * day)
+        try store.stopCycle(at: now - 7 * day)
+        try store.stopCycle(at: now - 4 * day)
+        #expect(try periods() == [Period(start: now - 10 * day, end: now - 4 * day)])
     }
 
-    // MARK: - undoLast
+    @Test("P7: второй, более ранний стоп не укорачивает период")
+    func earlierStopKeepsLonger() throws {
+        try store.startCycle(at: now - 10 * day)
+        try store.stopCycle(at: now - 4 * day)
+        try store.stopCycle(at: now - 7 * day)
+        #expect(try periods() == [Period(start: now - 10 * day, end: now - 4 * day)])
+    }
+
+    // MARK: undoLast
 
     @Test("U1: отмена на пустой истории — ошибка")
     func undoOnEmpty() throws {
         #expect(throws: CycleError.nothingToUndo) { try store.undoLast() }
     }
 
-    @Test("U2: отмена после старта удаляет запись")
+    @Test("U2: отмена после старта удаляет старт")
     func undoStart() throws {
         try store.startCycle(at: now - day)
-        #expect(try store.undoLast() == .deleted)
-        #expect(try all().isEmpty)
+        #expect(try store.undoLast() == .start)
+        #expect(try periods().isEmpty)
     }
 
-    @Test("U3: отмена после стопа снимает стоп, запись остаётся")
+    @Test("U3: отмена после стопа снимает стоп — период снова идёт")
     func undoStop() throws {
         try store.startCycle(at: now - 5 * day)
         try store.stopCycle(at: now - day)
-        #expect(try store.undoLast() == .reopened)
-        let cycles = try all()
-        #expect(cycles.count == 1)
-        #expect(cycles[0].start == now - 5 * day)
-        #expect(cycles[0].end == nil)
+        #expect(try store.undoLast() == .stop)
+        #expect(try periods() == [Period(start: now - 5 * day, end: nil)])
     }
 
-    @Test("U4: двойная отмена после стопа: сначала снимает стоп, потом удаляет")
-    func undoTwiceAfterStop() throws {
+    @Test("U4: отменяется последнее введённое событие, а не самое позднее по дате")
+    func undoByEntryOrder() throws {
         try store.startCycle(at: now - 5 * day)
         try store.stopCycle(at: now - day)
-        #expect(try store.undoLast() == .reopened)
-        #expect(try store.undoLast() == .deleted)
-        #expect(try all().isEmpty)
-        #expect(throws: CycleError.nothingToUndo) { try store.undoLast() }
+        try store.startCycle(at: now - 8 * day)   // введено последним, но раньше по дате
+        #expect(try store.undoLast() == .start)
+        #expect(try periods() == [Period(start: now - 5 * day, end: now - day)])
     }
 
-    @Test("U5: отмена не трогает старые циклы")
-    func undoKeepsOlderCycles() throws {
-        try store.startCycle(at: now - 40 * day)
-        try store.stopCycle(at: now - 35 * day)
-        try store.startCycle(at: now - day)
-        #expect(try store.undoLast() == .deleted)
-        let cycles = try all()
-        #expect(cycles.count == 1)
-        #expect(cycles[0].end == now - 35 * day)
-    }
-
-    @Test("U6: после отмены старта можно снова стартовать")
-    func startAgainAfterUndoStart() throws {
-        try store.startCycle(at: now - day)
-        try store.undoLast()
-        try store.startCycle(at: now)
-        #expect(try all().map(\.start) == [now])
-    }
-
-    @Test("U7: после отмены стопа можно снова остановить другой датой")
-    func stopAgainAfterUndoStop() throws {
-        try store.startCycle(at: now - 5 * day)
-        try store.stopCycle(at: now - 3 * day)
-        try store.undoLast()
-        try store.stopCycle(at: now - day)
-        #expect(try all().first?.end == now - day)
-    }
-
-    @Test("U8: цепочка отмен откатывает историю до пустой")
+    @Test("U5: цепочка отмен откатывает историю до пустой")
     func undoChainToEmpty() throws {
         try store.startCycle(at: now - 40 * day)
         try store.stopCycle(at: now - 35 * day)
         try store.startCycle(at: now - 5 * day)
         try store.stopCycle(at: now - day)
         let results = try (0..<4).map { _ in try store.undoLast() }
-        #expect(results == [.reopened, .deleted, .reopened, .deleted])
-        #expect(try all().isEmpty)
+        #expect(results == [.stop, .start, .stop, .start])
+        #expect(try store.events().isEmpty)
     }
 
-    // MARK: - Порядок и подсчёт дней
+    // MARK: deleteStop
 
-    @Test("O1: «последний» цикл определяется по дате начала, а не по порядку вставки")
-    func latestIsByStartDate() throws {
-        context.insert(Cycle(start: now - 5 * day, end: nil))
-        context.insert(Cycle(start: now - 40 * day, end: now - 35 * day))
-        try context.save()
-        #expect(try store.latest()?.start == now - 5 * day)
-        #expect(try store.undoLast() == .deleted)
-        #expect(try store.latest()?.start == now - 40 * day)
+    @Test("DS1: удаление лишнего длинного стопа снова показывает короткий период")
+    func deleteLongStopRestoresShort() throws {
+        try store.startCycle(at: now - 10 * day)
+        try store.stopCycle(at: now - 7 * day)
+        try store.stopCycle(at: now - 4 * day)
+        #expect(try store.deleteStop(onDay: now - 4 * day) == 1)
+        #expect(try periods() == [Period(start: now - 10 * day, end: now - 7 * day)])
     }
+
+    @Test("DS2: удаление единственного стопа — период снова идёт")
+    func deleteOnlyStop() throws {
+        try store.startCycle(at: now - 5 * day)
+        try store.stopCycle(at: now - day)
+        try store.deleteStop(onDay: now - day)
+        #expect(try periods() == [Period(start: now - 5 * day, end: nil)])
+    }
+
+    @Test("DS3: в выбранный день нет стопа — ошибка, данные не меняются")
+    func deleteStopMissingDay() throws {
+        try store.startCycle(at: now - 5 * day)
+        try store.stopCycle(at: now - day)
+        #expect(throws: CycleError.noStopOnDay) { try store.deleteStop(onDay: now - 2 * day) }
+        #expect(try store.events().count == 2)
+    }
+
+    @Test("DS4: удаляются только стопы, старт в тот же день остаётся")
+    func deleteStopKeepsStartSameDay() throws {
+        try store.startCycle(at: now - day)
+        try store.stopCycle(at: now - day + 3600)
+        try store.deleteStop(onDay: now - day)
+        let events = try store.events()
+        #expect(events.map(\.kind) == [.start])
+    }
+
+    @Test("DS5: день сравнивается по календарю — подходит любое время внутри дня")
+    func deleteStopByCalendarDay() throws {
+        let dayStart = store.calendar.startOfDay(for: now - 3 * day)
+        try store.startCycle(at: dayStart - 5 * day)
+        try store.stopCycle(at: dayStart + 23 * 3600 + 59 * 60)
+        #expect(try store.deleteStop(onDay: dayStart + 60) == 1)
+    }
+
+    @Test("DS6: несколько стопов в один день удаляются все")
+    func deleteAllStopsOfDay() throws {
+        let dayStart = store.calendar.startOfDay(for: now - 3 * day)
+        try store.startCycle(at: dayStart - 5 * day)
+        try store.stopCycle(at: dayStart + 3600)
+        try store.stopCycle(at: dayStart + 7200)
+        #expect(try store.deleteStop(onDay: dayStart) == 2)
+        #expect(try periods().last?.isActive == true)
+    }
+
+    @Test("DS7: удаление стопа между двумя периодами объединяет их в один")
+    func deleteStopBetweenPeriods() throws {
+        try store.startCycle(at: now - 40 * day)
+        try store.stopCycle(at: now - 35 * day)
+        try store.startCycle(at: now - 5 * day)
+        try store.stopCycle(at: now - day)
+        try store.deleteStop(onDay: now - 35 * day)
+        #expect(try periods() == [Period(start: now - 40 * day, end: now - day)])
+    }
+
+    // MARK: - Дата события из выбранного дня (сегодня / вчера / позавчера / календарь)
+
+    @Test("M1: «сегодня» — текущий момент для старта и стопа")
+    func eventDateToday() {
+        #expect(CycleStore.eventDate(for: .start, onDay: now, now: now, calendar: store.calendar) == now)
+        #expect(CycleStore.eventDate(for: .stop, onDay: now, now: now, calendar: store.calendar) == now)
+    }
+
+    @Test("M2: прошлый день — старт в 00:00, стоп в 23:59:59")
+    func eventDatePastDay() {
+        let calendar = store.calendar
+        for offset in [1, 2, 10] {
+            let picked = calendar.date(byAdding: .day, value: -offset, to: now)!
+            let dayStart = calendar.startOfDay(for: picked)
+            #expect(CycleStore.eventDate(for: .start, onDay: picked, now: now, calendar: calendar) == dayStart)
+            #expect(CycleStore.eventDate(for: .stop, onDay: picked, now: now, calendar: calendar)
+                    == dayStart + day - 1)
+        }
+    }
+
+    @Test("M3: старт и стоп в один прошлый день — период покрывает весь день")
+    func eventDateSameDay() throws {
+        let picked = now - 3 * day
+        try store.startCycle(at: CycleStore.eventDate(for: .start, onDay: picked, now: now, calendar: store.calendar))
+        try store.stopCycle(at: CycleStore.eventDate(for: .stop, onDay: picked, now: now, calendar: store.calendar))
+        let period = try #require(try periods().first)
+        #expect(store.calendar.dayNumber(from: period.start, to: period.end!) == 1)
+    }
+
+    @Test("M4: завтрашний день — API отклоняет как будущее")
+    func eventDateTomorrow() {
+        let date = CycleStore.eventDate(for: .start, onDay: now + day, now: now, calendar: store.calendar)
+        #expect(throws: CycleError.dateInFuture) { try store.startCycle(at: date) }
+    }
+
+    // MARK: - Подсчёт дней
 
     @Test("D1: день начала — день 1, переход через полночь — день 2")
     func dayNumberAcrossMidnight() throws {
