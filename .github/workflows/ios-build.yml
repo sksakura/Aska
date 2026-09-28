@@ -7,7 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  test:
+    name: Tests
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +19,7 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Run tests
+      - name: Run unit tests
         run: |
           # Newest available iPhone simulator on the runner
           DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '
@@ -31,8 +32,30 @@ jobs:
             -scheme Aska \
             -destination "id=$DEVICE_ID" \
             -derivedDataPath build-tests \
+            -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             test
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+
+  build:
+    name: Build IPA
+    # The app is only built when every test passed
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
 
       - name: Build (unsigned)
         run: |
