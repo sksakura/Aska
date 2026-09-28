@@ -6,3 +6,5 @@ Payload/
 *.ipa
 .DS_Store
 xcuserdata/
+build-tests/
+*.xcresult

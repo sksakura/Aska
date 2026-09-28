@@ -2,15 +2,54 @@ name: iOS Build
 
 on:
   push:
-    branches: [master, main]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
 jobs:
-  build:
+  test:
+    name: Tests
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run unit tests
+        run: |
+          # Newest available iPhone simulator on the runner
+          DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '
+            [.devices | to_entries | sort_by(.key) | reverse | .[]
+             | select(.key | contains("iOS")) | .value[]
+             | select(.name | startswith("iPhone"))][0].udid')
+          echo "Simulator: $DEVICE_ID"
+          xcodebuild \
+            -project Aska.xcodeproj \
+            -scheme Aska \
+            -destination "id=$DEVICE_ID" \
+            -derivedDataPath build-tests \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+
+  build:
+    name: Build IPA
+    # The app is only built when every test passed
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -42,3 +81,83 @@ jobs:
         with:
           name: Aska-unsigned-ipa
           path: Aska-unsigned.ipa
+
+  screenshots:
+    name: Screenshots
+    # Runs the app on a simulator with demo data and captures every screen, light and dark
+    needs: test
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for simulator
+        run: |
+          xcodebuild \
+            -project Aska.xcodeproj \
+            -scheme Aska \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Take screenshots
+        run: |
+          # Newest available regular-size iPhone simulator
+          DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '
+            [.devices | to_entries | sort_by(.key) | reverse | .[]
+             | select(.key | contains("iOS")) | .value[]
+             | select((.name | startswith("iPhone")) and (.name | contains("SE") | not))][0].udid')
+          echo "Simulator: $DEVICE_ID"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcrun simctl install "$DEVICE_ID" build/Build/Products/Debug-iphonesimulator/Aska.app
+          xcrun simctl status_bar "$DEVICE_ID" override --time "9:41" --batteryState charged --batteryLevel 100 \
+            --cellularBars 4 --wifiBars 3 || true
+          mkdir -p screenshots
+          for appearance in light dark; do
+            xcrun simctl ui "$DEVICE_ID" appearance "$appearance"
+            for scenario in onboarding today today-active calendar profile; do
+              xcrun simctl terminate "$DEVICE_ID" com.sksakura.aska || true
+              xcrun simctl launch "$DEVICE_ID" com.sksakura.aska -demo "$scenario"
+              # onboarding appears after the 2 s wait for iCloud settings
+              if [ "$scenario" = onboarding ]; then sleep 6; else sleep 4; fi
+              xcrun simctl io "$DEVICE_ID" screenshot "screenshots/${appearance}-${scenario}.png"
+            done
+          done
+          ls -la screenshots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Screenshots
+          path: screenshots
+
+      - name: Publish to the "screenshots" branch
+        # Easy to view on GitHub (also from a phone) without downloading a zip
+        if: github.event_name == 'push'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd screenshots
+          {
+            echo "# Screenshots"
+            echo
+            echo "Branch \`${GITHUB_REF_NAME}\`, commit ${GITHUB_SHA}"
+            echo
+            for f in light-*.png dark-*.png; do echo "### $f"; echo; echo "<img src=\"$f\" width=\"300\">"; echo; done
+          } > README.md
+          git init -q -b screenshots
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Screenshots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots

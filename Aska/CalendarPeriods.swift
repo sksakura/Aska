@@ -1,0 +1,113 @@
+import Foundation
+
+/// Whether a date shown on screen was entered by the user or predicted.
+enum Certainty: Equatable {
+    case fact
+    case forecast
+}
+
+/// A period as shown in a month view. Dates are calendar days (start of day), `end` is inclusive.
+/// A recorded period is fact/fact, an ongoing one is fact/forecast, a predicted one forecast/forecast.
+struct CalendarPeriod: Equatable {
+    var start: Date
+    var end: Date
+    var startCertainty: Certainty
+    var endCertainty: Certainty
+
+    var isForecast: Bool { startCertainty == .forecast }
+}
+
+/// How a single calendar day is shown.
+enum DayMark: Equatable {
+    case none
+    /// A recorded period day (filled circle).
+    case fact
+    /// A predicted period day (dashed circle).
+    case forecast
+}
+
+enum CalendarPeriods {
+    /// The mark for one day: fact wins over forecast. Days of an ongoing period up to today
+    /// are fact, its predicted remaining days are forecast.
+    static func mark(for day: Date, in periods: [CalendarPeriod], today: Date,
+                     calendar: Calendar = .current) -> DayMark {
+        let day = calendar.startOfDay(for: day)
+        let today = calendar.startOfDay(for: today)
+        var result = DayMark.none
+        for period in periods where period.start <= day && day <= period.end {
+            if period.startCertainty == .fact && (period.endCertainty == .fact || day <= today) {
+                return .fact
+            }
+            result = .forecast
+        }
+        return result
+    }
+
+    /// Periods that overlap the calendar month containing `date`: recorded ones plus forecasts.
+    ///
+    /// Forecast rules (the usual calendar-app method; cycle length counts from start to start):
+    /// - next start = start of the last period + `cycleLength` days;
+    /// - a period lasts `periodLength` days including its first day,
+    ///   so its end = start + `periodLength` − 1 days;
+    /// - later forecasts repeat the rule from the previous forecast's start;
+    /// - an ongoing period keeps its real start; its end is forecast the same way,
+    ///   but never earlier than `today` (the period has not ended yet).
+    static func forMonth(containing date: Date,
+                         periods: [Period],
+                         cycleLength: Int,
+                         periodLength: Int,
+                         today: Date,
+                         calendar: Calendar = .current) -> [CalendarPeriod] {
+        guard let month = calendar.dateInterval(of: .month, for: date) else { return [] }
+        let monthStart = month.start
+        let monthEnd = month.end  // first moment of the next month
+        func day(_ date: Date) -> Date { calendar.startOfDay(for: date) }
+        func adding(_ days: Int, to date: Date) -> Date {
+            calendar.date(byAdding: .day, value: days, to: date) ?? date
+        }
+
+        var result: [CalendarPeriod] = []
+        var lastStart: Date?
+
+        for period in periods {
+            let start = day(period.start)
+            if let end = period.end {
+                result.append(CalendarPeriod(start: start, end: day(end),
+                                             startCertainty: .fact, endCertainty: .fact))
+            } else {
+                let end = max(adding(periodLength - 1, to: start), day(today))
+                result.append(CalendarPeriod(start: start, end: end,
+                                             startCertainty: .fact, endCertainty: .forecast))
+            }
+            lastStart = start
+        }
+
+        if var base = lastStart {
+            while true {
+                let start = adding(cycleLength, to: base)
+                guard start < monthEnd else { break }
+                result.append(CalendarPeriod(start: start, end: adding(periodLength - 1, to: start),
+                                             startCertainty: .forecast, endCertainty: .forecast))
+                base = start
+            }
+        }
+
+        return result.filter { $0.start < monthEnd && $0.end >= monthStart }
+    }
+
+    /// The first forecast period starting after the last recorded or ongoing one.
+    static func nextForecast(periods: [Period], cycleLength: Int, periodLength: Int,
+                             today: Date, calendar: Calendar = .current) -> CalendarPeriod? {
+        var month = today
+        // Forecasts are at most cycleLength (≤ 45) days apart, so a few months is enough.
+        for _ in 0..<4 {
+            let found = forMonth(containing: month, periods: periods, cycleLength: cycleLength,
+                                 periodLength: periodLength, today: today, calendar: calendar)
+                .first { $0.isForecast }
+            if let found { return found }
+            guard let next = calendar.date(byAdding: .month, value: 1, to: month) else { break }
+            month = next
+        }
+        return nil
+    }
+}
