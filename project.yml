@@ -13,13 +13,28 @@ targets:
     type: application
     platform: iOS
     sources: [Aska]
-    scheme: {}
+    scheme:
+      testTargets:
+        - AskaTests
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sksakura.aska
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
+        # Extra keys (background push for CloudKit sync) merged into the generated Info.plist
+        INFOPLIST_FILE: Support/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Aska
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        CODE_SIGN_ENTITLEMENTS: Support/Aska.entitlements
         CODE_SIGN_STYLE: Automatic
+  AskaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [AskaTests]
+    dependencies:
+      - target: Aska
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sksakura.aska.tests
+        GENERATE_INFOPLIST_FILE: YES

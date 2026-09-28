@@ -2,7 +2,7 @@ name: iOS Build
 
 on:
   push:
-    branches: [master, main]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
@@ -17,6 +17,22 @@ jobs:
 
       - name: Generate Xcode project
         run: xcodegen generate
+
+      - name: Run tests
+        run: |
+          # Newest available iPhone simulator on the runner
+          DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '
+            [.devices | to_entries | sort_by(.key) | reverse | .[]
+             | select(.key | contains("iOS")) | .value[]
+             | select(.name | startswith("iPhone"))][0].udid')
+          echo "Simulator: $DEVICE_ID"
+          xcodebuild \
+            -project Aska.xcodeproj \
+            -scheme Aska \
+            -destination "id=$DEVICE_ID" \
+            -derivedDataPath build-tests \
+            CODE_SIGNING_ALLOWED=NO \
+            test
 
       - name: Build (unsigned)
         run: |
