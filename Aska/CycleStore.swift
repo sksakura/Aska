@@ -46,6 +46,13 @@ struct CycleStore {
                                         today: now(), calendar: calendar)
     }
 
+    /// Data for the main screen: cycle and period lengths, today's day of the cycle and percentages.
+    func summary(settings: UserSettings) throws -> CycleSummary {
+        let recorded = try periods()
+        return CycleSummary.make(periods: recorded, cycleLength: settings.cycleLength,
+                                 periodLength: settings.periodLength, today: now(), calendar: calendar)
+    }
+
     /// Turns a calendar day picked in the UI ("today", "yesterday", a date picker) into an event time.
     /// Today means the current moment; for a past day a start is its first moment
     /// and a stop is its last, so that day is fully inside the period.

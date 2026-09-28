@@ -210,14 +210,18 @@ private struct StatusView: View {
     var body: some View {
         VStack(spacing: 8) {
             if let latest {
-                let day = Calendar.current.dayNumber(from: latest.start, to: .now)
+                let summary = CycleSummary.make(periods: periods, cycleLength: settings.cycleLength,
+                                                periodLength: settings.periodLength, today: .now)
+                let day = summary.dayOfCycle ?? 1
                 if latest.isActive {
                     Text("🩸").font(.system(size: 56))
                     Text("Период идёт: день \(day)").font(.title2.bold())
                     Text("Обычно длится \(settings.periodLength) дн.").foregroundStyle(.secondary)
                 } else {
                     Text("😊").font(.system(size: 56))
-                    Text("День цикла: \(day)").font(.title2.bold())
+                    Text("День цикла: \(day) из \(summary.cycleLength)").font(.title2.bold())
+                    ProgressView(value: (summary.todayPercent ?? 0) / 100)
+                        .tint(summary.isLate ? .orange : .pink)
                     if let next = CalendarPeriods.nextForecast(periods: periods,
                                                                cycleLength: settings.cycleLength,
                                                                periodLength: settings.periodLength,
