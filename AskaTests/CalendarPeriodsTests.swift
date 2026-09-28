@@ -38,33 +38,35 @@ struct CalendarPeriodsTests {
 
     @Test("FC2: закрытый период — факт/факт, даты приведены к началу дня")
     func closedFact() {
-        #expect(month(8, periods: closedAugust, today: d(8, 10)) == [fact(d(8, 1), d(8, 5))])
+        // в августе и сам период 1–5 авг, и прогноз 29 авг – 2 сент
+        #expect(month(8, periods: closedAugust, today: d(8, 10))
+                == [fact(d(8, 1), d(8, 5)), forecast(d(8, 29), d(9, 2))])
     }
 
-    @Test("FC3: прогноз — начало = последнее окончание + цикл, окончание = + цикл + период")
+    @Test("FC3: прогноз — начало = начало последнего + цикл, длится «длина периода» дней")
     func forecastAfterClosed() {
-        // 5 авг + 28 = 2 сент; 5 авг + 33 = 7 сент
-        #expect(month(9, periods: closedAugust, today: d(8, 10)) == [forecast(d(9, 2), d(9, 7))])
+        // 1 авг + 28 = 29 авг … 2 сент (5 дней); 29 авг + 28 = 26 сент … 30 сент
+        #expect(month(9, periods: closedAugust, today: d(8, 10))
+                == [forecast(d(8, 29), d(9, 2)), forecast(d(9, 26), d(9, 30))])
     }
 
-    @Test("FC4: цепочка прогнозов — следующий считается от окончания предыдущего прогноза")
+    @Test("FC4: цепочка прогнозов — каждый следующий через длину цикла от предыдущего начала")
     func forecastChain() {
-        // 7 сент + 28 = 5 окт … 10 окт; 10 окт + 28 = 7 нояб … 12 нояб
-        #expect(month(10, periods: closedAugust, today: d(8, 10)) == [forecast(d(10, 5), d(10, 10))])
-        #expect(month(11, periods: closedAugust, today: d(8, 10)) == [forecast(d(11, 7), d(11, 12))])
+        // 26 сент + 28 = 24 окт … 28 окт; 24 окт + 28 = 21 нояб … 25 нояб
+        #expect(month(10, periods: closedAugust, today: d(8, 10)) == [forecast(d(10, 24), d(10, 28))])
+        #expect(month(11, periods: closedAugust, today: d(8, 10)) == [forecast(d(11, 21), d(11, 25))])
     }
 
-    @Test("FC5: в месяце и факт, и прогноз")
-    func factAndForecastInOneMonth() {
+    @Test("FC5: фактическая длина прошлого периода не влияет на прогноз")
+    func actualLengthDoesNotShiftForecast() {
         let periods = [Period(start: d(8, 1), end: d(8, 3))]
-        // 3 авг + 28 = 31 авг … 5 сент
-        #expect(month(8, periods: periods, today: d(8, 10)) == [fact(d(8, 1), d(8, 3)), forecast(d(8, 31), d(9, 5))])
+        #expect(month(8, periods: periods, today: d(8, 10)) == [fact(d(8, 1), d(8, 3)), forecast(d(8, 29), d(9, 2))])
     }
 
-    @Test("FC6: идущий период — начало факт, окончание прогноз = начало + период")
+    @Test("FC6: идущий период — начало факт, окончание прогноз = начало + период − 1")
     func activePeriod() {
         let periods = [Period(start: d(9, 20, hour: 9), end: nil)]
-        let expected = CalendarPeriod(start: d(9, 20), end: d(9, 25), startCertainty: .fact, endCertainty: .forecast)
+        let expected = CalendarPeriod(start: d(9, 20), end: d(9, 24), startCertainty: .fact, endCertainty: .forecast)
         #expect(month(9, periods: periods, today: d(9, 22)) == [expected])
     }
 
@@ -75,11 +77,11 @@ struct CalendarPeriodsTests {
         #expect(result.first == CalendarPeriod(start: d(9, 1), end: d(9, 12), startCertainty: .fact, endCertainty: .forecast))
     }
 
-    @Test("FC8: после идущего периода прогноз считается от прогнозного окончания")
+    @Test("FC8: после идущего периода прогноз считается от его начала")
     func forecastAfterActive() {
         let periods = [Period(start: d(9, 20), end: nil)]
-        // окончание ≈ 25 сент; 25 сент + 28 = 23 окт … 28 окт
-        #expect(month(10, periods: periods, today: d(9, 22)) == [forecast(d(10, 23), d(10, 28))])
+        // 20 сент + 28 = 18 окт … 22 окт
+        #expect(month(10, periods: periods, today: d(9, 22)) == [forecast(d(10, 18), d(10, 22))])
     }
 
     @Test("FC9: период на стыке месяцев попадает в оба месяца")
@@ -95,17 +97,17 @@ struct CalendarPeriodsTests {
         let september = month(9, periods: endsOnFirst, today: d(9, 10))
         #expect(september.first == fact(d(8, 28), d(9, 1)))
         // 3 сент + 28 = 1 окт
-        let forecastOnFirst = [Period(start: d(9, 1), end: d(9, 3))]
-        #expect(month(9, periods: forecastOnFirst, today: d(9, 10)) == [fact(d(9, 1), d(9, 3))])
-        #expect(month(10, periods: forecastOnFirst, today: d(9, 10)) == [forecast(d(10, 1), d(10, 6))])
+        let forecastOnFirst = [Period(start: d(9, 3), end: d(9, 5))]
+        #expect(month(9, periods: forecastOnFirst, today: d(9, 10)) == [fact(d(9, 3), d(9, 5))])
+        #expect(month(10, periods: forecastOnFirst, today: d(9, 10))
+                == [forecast(d(10, 1), d(10, 5)), forecast(d(10, 29), d(11, 2))])
     }
 
     @Test("FC11: прогноз строится только от последнего периода, старые факты его не порождают")
     func forecastOnlyFromLatest() {
         let periods = [Period(start: d(8, 1), end: d(8, 5)), Period(start: d(9, 1), end: d(9, 5))]
-        // без правила в сентябре был бы прогноз 2–7 сент от августа
-        #expect(month(9, periods: periods, today: d(9, 10)) == [fact(d(9, 1), d(9, 5))])
-        #expect(month(10, periods: periods, today: d(9, 10)) == [forecast(d(10, 3), d(10, 8))])
+        // от августа был бы прогноз 29 авг – 2 сент; его быть не должно
+        #expect(month(9, periods: periods, today: d(9, 10)) == [fact(d(9, 1), d(9, 5)), forecast(d(9, 29), d(10, 3))])
     }
 
     @Test("FC12: прошлый месяц без фактов — пусто, прогноз назад не строится")
@@ -117,7 +119,7 @@ struct CalendarPeriodsTests {
     func nextForecast() {
         let next = CalendarPeriods.nextForecast(periods: closedAugust, cycleLength: 28, periodLength: 5,
                                                 today: d(8, 10), calendar: calendar)
-        #expect(next == forecast(d(9, 2), d(9, 7)))
+        #expect(next == forecast(d(8, 29), d(9, 2)))
         #expect(CalendarPeriods.nextForecast(periods: [], cycleLength: 28, periodLength: 5,
                                              today: d(8, 10), calendar: calendar) == nil)
     }
@@ -126,8 +128,15 @@ struct CalendarPeriodsTests {
     func usesSettingsLengths() {
         let result = CalendarPeriods.forMonth(containing: d(9, 15), periods: closedAugust, cycleLength: 30,
                                               periodLength: 7, today: d(8, 10), calendar: calendar)
-        // 5 авг + 30 = 4 сент; 5 авг + 37 = 11 сент
-        #expect(result == [forecast(d(9, 4), d(9, 11))])
+        // 1 авг + 30 = 31 авг … 6 сент; 31 авг + 30 = 30 сент … 6 окт
+        #expect(result == [forecast(d(8, 31), d(9, 6)), forecast(d(9, 30), d(10, 6))])
+    }
+
+    @Test("FC16: период длиной 1 день — начало и окончание прогноза совпадают")
+    func oneDayPeriod() {
+        let result = CalendarPeriods.forMonth(containing: d(9, 15), periods: closedAugust, cycleLength: 28,
+                                              periodLength: 1, today: d(8, 10), calendar: calendar)
+        #expect(result == [forecast(d(9, 26), d(9, 26))])
     }
 }
 
@@ -157,12 +166,12 @@ struct CalendarPeriodsStoreTests {
         let september = try store.periods(inMonthOf: d0(9, 1, 0), settings: settings)
         #expect(september == [
             CalendarPeriod(start: d0(8, 28, 0), end: d0(9, 1, 0), startCertainty: .fact, endCertainty: .fact),
-            CalendarPeriod(start: d0(9, 20, 0), end: d0(9, 25, 0), startCertainty: .fact, endCertainty: .forecast),
+            CalendarPeriod(start: d0(9, 20, 0), end: d0(9, 24, 0), startCertainty: .fact, endCertainty: .forecast),
         ])
         let october = try store.periods(inMonthOf: d0(10, 10, 0), settings: settings)
         // rethrows calls inside #expect are treated as throwing, so evaluate outside
         let allForecast = october.allSatisfy { $0.isForecast }
         #expect(allForecast)
-        #expect(october.first?.start == d0(10, 23, 0))
+        #expect(october.first?.start == d0(10, 18, 0))
     }
 }

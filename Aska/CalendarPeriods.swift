@@ -20,11 +20,12 @@ struct CalendarPeriod: Equatable {
 enum CalendarPeriods {
     /// Periods that overlap the calendar month containing `date`: recorded ones plus forecasts.
     ///
-    /// Forecast rules:
-    /// - next start = last period end + `cycleLength` days;
-    /// - its end = last period end + `cycleLength` + `periodLength` days;
-    /// - later forecasts repeat the same rule from the previous forecast's end;
-    /// - an ongoing period keeps its real start, its end is forecast as start + `periodLength`,
+    /// Forecast rules (the usual calendar-app method; cycle length counts from start to start):
+    /// - next start = start of the last period + `cycleLength` days;
+    /// - a period lasts `periodLength` days including its first day,
+    ///   so its end = start + `periodLength` − 1 days;
+    /// - later forecasts repeat the rule from the previous forecast's start;
+    /// - an ongoing period keeps its real start; its end is forecast the same way,
     ///   but never earlier than `today` (the period has not ended yet).
     static func forMonth(containing date: Date,
                          periods: [Period],
@@ -41,30 +42,28 @@ enum CalendarPeriods {
         }
 
         var result: [CalendarPeriod] = []
-        var lastEnd: Date?
+        var lastStart: Date?
 
         for period in periods {
+            let start = day(period.start)
             if let end = period.end {
-                result.append(CalendarPeriod(start: day(period.start), end: day(end),
+                result.append(CalendarPeriod(start: start, end: day(end),
                                              startCertainty: .fact, endCertainty: .fact))
-                lastEnd = day(end)
             } else {
-                let start = day(period.start)
-                let end = max(adding(periodLength, to: start), day(today))
+                let end = max(adding(periodLength - 1, to: start), day(today))
                 result.append(CalendarPeriod(start: start, end: end,
                                              startCertainty: .fact, endCertainty: .forecast))
-                lastEnd = end
             }
+            lastStart = start
         }
 
-        if var base = lastEnd {
+        if var base = lastStart {
             while true {
                 let start = adding(cycleLength, to: base)
                 guard start < monthEnd else { break }
-                let end = adding(cycleLength + periodLength, to: base)
-                result.append(CalendarPeriod(start: start, end: end,
+                result.append(CalendarPeriod(start: start, end: adding(periodLength - 1, to: start),
                                              startCertainty: .forecast, endCertainty: .forecast))
-                base = end
+                base = start
             }
         }
 
@@ -75,7 +74,7 @@ enum CalendarPeriods {
     static func nextForecast(periods: [Period], cycleLength: Int, periodLength: Int,
                              today: Date, calendar: Calendar = .current) -> CalendarPeriod? {
         var month = today
-        // Forecasts are at most cycleLength + periodLength days apart, so a few months is enough.
+        // Forecasts are at most cycleLength (≤ 45) days apart, so a few months is enough.
         for _ in 0..<4 {
             let found = forMonth(containing: month, periods: periods, cycleLength: cycleLength,
                                  periodLength: periodLength, today: today, calendar: calendar)
