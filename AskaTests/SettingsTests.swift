@@ -70,6 +70,11 @@ struct SettingsStoreTests {
 
     func encoded(_ settings: UserSettings) -> Data { try! JSONEncoder().encode(settings) }
 
+    /// JSON key order is not stable, so compare decoded values rather than bytes.
+    func stored(in storage: UserDefaults) -> UserSettings? {
+        storage.data(forKey: SettingsStore.key).flatMap { try? JSONDecoder().decode(UserSettings.self, from: $0) }
+    }
+
     @Test("K1: первый запуск — настроек нет, нужен онбординг")
     func emptyOnFirstLaunch() {
         #expect(SettingsStore(local: local, cloud: cloud).settings == nil)
@@ -78,15 +83,15 @@ struct SettingsStoreTests {
     @Test("K2: сохранение пишет и локально, и в iCloud")
     func saveWritesBoth() {
         SettingsStore(local: local, cloud: cloud).save(sample)
-        #expect(local.data(forKey: SettingsStore.key) == encoded(sample))
-        #expect(cloud.data(forKey: SettingsStore.key) == encoded(sample))
+        #expect(stored(in: local) == sample)
+        #expect(stored(in: cloud) == sample)
     }
 
     @Test("K3: новое устройство — настройки есть только в iCloud, восстанавливаются и копируются локально")
     func restoreFromCloud() {
         cloud.set(encoded(sample), forKey: SettingsStore.key)
         #expect(SettingsStore(local: local, cloud: cloud).settings == sample)
-        #expect(local.data(forKey: SettingsStore.key) == encoded(sample))
+        #expect(stored(in: local) == sample)
     }
 
     @Test("K4: iCloud недоступен — работает на локальных настройках")
@@ -111,7 +116,7 @@ struct SettingsStoreTests {
         cloud.set(encoded(sample), forKey: SettingsStore.key)
         store.cloudDidChange()
         #expect(store.settings == sample)
-        #expect(local.data(forKey: SettingsStore.key) == encoded(sample))
+        #expect(stored(in: local) == sample)
     }
 
     @Test("K7: повреждённые данные считаются отсутствующими, не падаем")
