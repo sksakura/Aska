@@ -42,9 +42,25 @@ struct CycleStore {
         return try context.fetch(descriptor).first
     }
 
+    /// Earliest moment a new period may start: the end of the previous one (nil = no limit).
+    func earliestStart() throws -> Date? {
+        try latest()?.end
+    }
+
+    /// Turns a calendar day picked in the UI ("today", "yesterday", a date picker) into a start time.
+    /// Today means the current moment, a past day means its first moment. When the picked day is the
+    /// day the previous period ended, the start is moved to that end so the two don't overlap.
+    static func startDate(forDay day: Date, now: Date, notBefore minimum: Date?,
+                          calendar: Calendar = .current) -> Date {
+        var date = calendar.isDate(day, inSameDayAs: now) ? now : calendar.startOfDay(for: day)
+        if let minimum, date < minimum, calendar.isDate(date, inSameDayAs: minimum) {
+            date = minimum
+        }
+        return date
+    }
+
     @discardableResult
-    func startCycle(at date: Date? = nil) throws -> Cycle {
-        let date = date ?? now()
+    func startCycle(at date: Date) throws -> Cycle {
         guard date <= now() else { throw CycleError.dateInFuture }
         if let last = try latest() {
             guard let lastEnd = last.end else { throw CycleError.alreadyActive }

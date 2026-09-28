@@ -9,6 +9,9 @@ struct MainView: View {
     @State private var showSettings = false
     @State private var confirmUndo = false
     @State private var errorMessage: String?
+    @State private var chooseStartDay = false
+    @State private var showDatePicker = false
+    @State private var pickedDay = Date.now
 
     private var store: CycleStore { CycleStore(context: context) }
     private var latest: Cycle? { cycles.first }
@@ -46,6 +49,21 @@ struct MainView: View {
                      ? "Запись о начале периода будет удалена."
                      : "Период снова будет считаться идущим.")
             }
+            .confirmationDialog("Когда начался период?", isPresented: $chooseStartDay, titleVisibility: .visible) {
+                ForEach(quickStartDays, id: \.offset) { option in
+                    Button(option.title) { start(onDay: option.day) }
+                }
+                Button("Выбрать дату…") {
+                    pickedDay = .now
+                    showDatePicker = true
+                }
+            }
+            .sheet(isPresented: $showDatePicker) {
+                StartDatePicker(day: $pickedDay, range: startDayRange) {
+                    showDatePicker = false
+                    start(onDay: pickedDay)
+                }
+            }
             .alert("Не получилось", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -64,11 +82,37 @@ struct MainView: View {
                 .buttonStyle(.borderedProminent)
                 .frame(maxWidth: .infinity)
         } else {
-            Button("Период начался") { perform { try store.startCycle() } }
+            Button("Период начался") { chooseStartDay = true }
                 .buttonStyle(.borderedProminent)
                 .tint(.pink)
                 .frame(maxWidth: .infinity)
         }
+    }
+
+    /// Earliest allowed start: the end of the previous period.
+    private var previousEnd: Date? { latest?.end }
+
+    private var startDayRange: ClosedRange<Date> {
+        (previousEnd ?? .distantPast)...Date.now
+    }
+
+    /// Today / yesterday / the day before, minus days before the previous period ended.
+    private var quickStartDays: [(offset: Int, title: String, day: Date)] {
+        let calendar = Calendar.current
+        var options: [(offset: Int, title: String, day: Date)] = []
+        for (offset, title) in ["Сегодня", "Вчера", "Позавчера"].enumerated() {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: .now) else { continue }
+            if let previousEnd, calendar.startOfDay(for: day) < calendar.startOfDay(for: previousEnd) {
+                continue
+            }
+            options.append((offset: offset, title: title, day: day))
+        }
+        return options
+    }
+
+    private func start(onDay day: Date) {
+        let date = CycleStore.startDate(forDay: day, now: .now, notBefore: previousEnd)
+        perform { try store.startCycle(at: date) }
     }
 
     private var undoTitle: String {
@@ -81,6 +125,32 @@ struct MainView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct StartDatePicker: View {
+    @Binding var day: Date
+    let range: ClosedRange<Date>
+    let onDone: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            DatePicker("День начала", selection: $day, in: range, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .padding()
+                .navigationTitle("Начало периода")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Отмена") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Готово", action: onDone)
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

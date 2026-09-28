@@ -34,10 +34,70 @@ struct CycleStoreTests {
         #expect(cycles[0].end == nil)
     }
 
-    @Test("S2: старт без даты берёт текущее время")
-    func startDefaultsToNow() throws {
-        try store.startCycle()
-        #expect(try all().first?.start == now)
+    @Test("S2: старт принимает дату и сохраняет её как есть")
+    func startStoresGivenDate() throws {
+        try store.startCycle(at: now - 3 * day - 123)
+        #expect(try all().first?.start == now - 3 * day - 123)
+    }
+
+    // MARK: - Выбор дня старта в UI (сегодня / вчера / позавчера / дата)
+
+    var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    @Test("SD1: «сегодня» — текущий момент")
+    func pickToday() {
+        #expect(CycleStore.startDate(forDay: now, now: now, notBefore: nil, calendar: utc) == now)
+    }
+
+    @Test("SD2: «вчера» и «позавчера» — начало того дня")
+    func pickPastDays() {
+        for offset in [1, 2] {
+            let picked = utc.date(byAdding: .day, value: -offset, to: now)!
+            let result = CycleStore.startDate(forDay: picked, now: now, notBefore: nil, calendar: utc)
+            #expect(result == utc.startOfDay(for: picked))
+        }
+    }
+
+    @Test("SD3: выбран день окончания прошлого периода — старт сдвигается на момент окончания")
+    func pickDayOfPreviousEnd() throws {
+        let previousEnd = utc.startOfDay(for: now - 2 * day) + 15 * 3600
+        let result = CycleStore.startDate(forDay: previousEnd, now: now, notBefore: previousEnd, calendar: utc)
+        #expect(result == previousEnd)
+        try store.startCycle(at: now - 10 * day)
+        try store.stopCycle(at: previousEnd)
+        try store.startCycle(at: result)
+        #expect(try all().count == 2)
+    }
+
+    @Test("SD4: выбран день раньше окончания прошлого — не сдвигается, API отклоняет")
+    func pickDayBeforePreviousEnd() throws {
+        let previousEnd = utc.startOfDay(for: now - 2 * day) + 15 * 3600
+        try store.startCycle(at: now - 10 * day)
+        try store.stopCycle(at: previousEnd)
+        let picked = previousEnd - day
+        let minimum = try store.earliestStart()
+        let result = CycleStore.startDate(forDay: picked, now: now, notBefore: minimum, calendar: utc)
+        #expect(result == utc.startOfDay(for: picked))
+        #expect(throws: CycleError.startBeforePreviousEnd) { try store.startCycle(at: result) }
+    }
+
+    @Test("SD5: выбран завтрашний день — API отклоняет как будущее")
+    func pickTomorrow() {
+        let result = CycleStore.startDate(forDay: now + day, now: now, notBefore: nil, calendar: utc)
+        #expect(throws: CycleError.dateInFuture) { try store.startCycle(at: result) }
+    }
+
+    @Test("SD6: earliestStart — нет ограничения на пустой истории и при идущем периоде, иначе конец прошлого")
+    func earliestStart() throws {
+        #expect(try store.earliestStart() == nil)
+        try store.startCycle(at: now - 5 * day)
+        #expect(try store.earliestStart() == nil)
+        try store.stopCycle(at: now - day)
+        #expect(try store.earliestStart() == now - day)
     }
 
     @Test("S3: старт после закрытого цикла создаёт новый, старый не меняется")
