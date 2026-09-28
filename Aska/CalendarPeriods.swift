@@ -17,7 +17,32 @@ struct CalendarPeriod: Equatable {
     var isForecast: Bool { startCertainty == .forecast }
 }
 
+/// How a single calendar day is shown.
+enum DayMark: Equatable {
+    case none
+    /// A recorded period day (filled circle).
+    case fact
+    /// A predicted period day (dashed circle).
+    case forecast
+}
+
 enum CalendarPeriods {
+    /// The mark for one day: fact wins over forecast. Days of an ongoing period up to today
+    /// are fact, its predicted remaining days are forecast.
+    static func mark(for day: Date, in periods: [CalendarPeriod], today: Date,
+                     calendar: Calendar = .current) -> DayMark {
+        let day = calendar.startOfDay(for: day)
+        let today = calendar.startOfDay(for: today)
+        var result = DayMark.none
+        for period in periods where period.start <= day && day <= period.end {
+            if period.startCertainty == .fact && (period.endCertainty == .fact || day <= today) {
+                return .fact
+            }
+            result = .forecast
+        }
+        return result
+    }
+
     /// Periods that overlap the calendar month containing `date`: recorded ones plus forecasts.
     ///
     /// Forecast rules (the usual calendar-app method; cycle length counts from start to start):

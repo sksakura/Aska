@@ -2,58 +2,83 @@ import Foundation
 import Testing
 @testable import Aska
 
+/// Mid-June birthdays in UTC, so the year never depends on the machine's time zone.
+func birthday(_ year: Int) -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    return calendar.date(from: DateComponents(year: year, month: 6, day: 15))!
+}
+
 struct UserSettingsValidationTests {
     let year = 2026
-    let valid = UserSettings(birthYear: 2000, menarcheAge: 13, cycleLength: 28, periodLength: 5)
+    let utc: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
+    let valid = UserSettings(birthDate: birthday(2000), menarcheYear: 2013, cycleLength: 28, periodLength: 5)
+
+    func isValid(_ settings: UserSettings) -> Bool {
+        settings.isValid(currentYear: year, calendar: utc)
+    }
 
     @Test("V1: типичные значения валидны")
     func typicalIsValid() {
-        #expect(valid.isValid(currentYear: year))
+        #expect(isValid(valid))
     }
 
     enum Field: Sendable {
-        case menarcheAge, cycleLength, periodLength
+        case cycleLength, periodLength
         func set(_ value: Int, in settings: inout UserSettings) {
             switch self {
-            case .menarcheAge: settings.menarcheAge = value
             case .cycleLength: settings.cycleLength = value
             case .periodLength: settings.periodLength = value
             }
         }
     }
 
-    @Test("V2: границы диапазонов включительно", arguments: [
-        (Field.menarcheAge, 8, true), (.menarcheAge, 18, true),
-        (.menarcheAge, 7, false), (.menarcheAge, 19, false),
-        (.cycleLength, 20, true), (.cycleLength, 45, true),
-        (.cycleLength, 19, false), (.cycleLength, 46, false),
-        (.periodLength, 1, true), (.periodLength, 10, true),
-        (.periodLength, 0, false), (.periodLength, 11, false),
+    @Test("V2: границы длительностей включительно (цикл 15–45, менструация 1–12)", arguments: [
+        (Field.cycleLength, 15, true), (.cycleLength, 45, true),
+        (.cycleLength, 14, false), (.cycleLength, 46, false),
+        (.periodLength, 1, true), (.periodLength, 12, true),
+        (.periodLength, 0, false), (.periodLength, 13, false),
     ] as [(Field, Int, Bool)])
     func rangeBoundaries(field: Field, value: Int, expected: Bool) {
         var settings = valid
         field.set(value, in: &settings)
-        #expect(settings.isValid(currentYear: year) == expected)
+        #expect(isValid(settings) == expected)
     }
 
-    @Test("V3: границы года рождения: не старше 80 и не младше 8 лет")
-    func birthYearBoundaries() {
+    @Test("V3: год начала менструаций — от 8 до 18 лет после рождения")
+    func menarcheYearBoundaries() {
         var settings = valid
-        settings.menarcheAge = 8
-        for (birthYear, expected) in [(1946, true), (1945, false), (2018, true), (2019, false)] {
-            settings.birthYear = birthYear
-            #expect(settings.isValid(currentYear: year) == expected, "birthYear \(birthYear)")
+        for (menarcheYear, expected) in [(2008, true), (2007, false), (2018, true), (2019, false)] {
+            settings.menarcheYear = menarcheYear
+            #expect(isValid(settings) == expected, "menarcheYear \(menarcheYear)")
         }
     }
 
-    @Test("V4: первая менструация не может быть в будущем")
+    @Test("V4: год рождения — не старше 80 и не младше 8 лет")
+    func birthYearBoundaries() {
+        for (birthYear, expected) in [(1946, true), (1945, false), (2018, true), (2019, false)] {
+            let settings = UserSettings(birthDate: birthday(birthYear), menarcheYear: birthYear + 8,
+                                        cycleLength: 28, periodLength: 5)
+            #expect(isValid(settings) == expected, "birthYear \(birthYear)")
+        }
+    }
+
+    @Test("V5: год начала менструаций не может быть в будущем")
     func menarcheNotInFuture() {
-        var settings = valid
-        settings.birthYear = 2014
-        settings.menarcheAge = 12
-        #expect(settings.isValid(currentYear: year))
-        settings.menarcheAge = 13
-        #expect(!settings.isValid(currentYear: year))
+        var settings = UserSettings(birthDate: birthday(2014), menarcheYear: 2026, cycleLength: 28, periodLength: 5)
+        #expect(isValid(settings))
+        settings.menarcheYear = 2027
+        #expect(!isValid(settings))
+    }
+
+    @Test("V6: допустимые годы начала менструаций для степпера")
+    func menarcheYearRange() {
+        #expect(UserSettings.menarcheYearRange(birthYear: 2000, currentYear: year) == 2008...2018)
+        #expect(UserSettings.menarcheYearRange(birthYear: 2014, currentYear: year) == 2022...2026)
     }
 }
 
@@ -61,7 +86,7 @@ struct UserSettingsValidationTests {
 struct SettingsStoreTests {
     let local: UserDefaults
     let cloud: UserDefaults
-    let sample = UserSettings(birthYear: 1995, menarcheAge: 12, cycleLength: 30, periodLength: 6)
+    let sample = UserSettings(birthDate: birthday(1995), menarcheYear: 2007, cycleLength: 30, periodLength: 6, remindersOn: false)
 
     init() {
         local = UserDefaults(suiteName: "test.local.\(UUID())")!

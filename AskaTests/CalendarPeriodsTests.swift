@@ -140,6 +140,44 @@ struct CalendarPeriodsTests {
     }
 }
 
+struct DayMarkTests {
+    let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
+
+    func d(_ day: Int) -> Date { calendar.date(from: DateComponents(year: 2026, month: 9, day: day))! }
+
+    func mark(_ day: Int, _ periods: [CalendarPeriod], today: Int = 22) -> DayMark {
+        CalendarPeriods.mark(for: d(day), in: periods, today: d(today), calendar: calendar)
+    }
+
+    @Test("DM1: день зафиксированного периода — факт, вне периода — ничего")
+    func factDays() {
+        let periods = [CalendarPeriod(start: d(1), end: d(5), startCertainty: .fact, endCertainty: .fact)]
+        #expect(mark(1, periods) == .fact)
+        #expect(mark(5, periods) == .fact)
+        #expect(mark(6, periods) == .none)
+    }
+
+    @Test("DM2: идущий период — до сегодня факт, после — прогноз")
+    func activeDays() {
+        let periods = [CalendarPeriod(start: d(20), end: d(24), startCertainty: .fact, endCertainty: .forecast)]
+        #expect(mark(20, periods) == .fact)
+        #expect(mark(22, periods) == .fact)
+        #expect(mark(23, periods) == .forecast)
+    }
+
+    @Test("DM3: прогнозный период — прогноз; факт важнее прогноза при пересечении")
+    func forecastDays() {
+        let forecast = CalendarPeriod(start: d(3), end: d(7), startCertainty: .forecast, endCertainty: .forecast)
+        let fact = CalendarPeriod(start: d(1), end: d(4), startCertainty: .fact, endCertainty: .fact)
+        #expect(mark(6, [forecast]) == .forecast)
+        #expect(mark(4, [forecast, fact]) == .fact)
+    }
+}
+
 /// Helper usable in stored property initialisers (no `self`).
 private func d0(_ month: Int, _ day: Int, _ hour: Int) -> Date {
     var calendar = Calendar(identifier: .gregorian)
@@ -157,7 +195,7 @@ struct CalendarPeriodsStoreTests {
         let container = try ModelContainer(for: CycleEvent.self, configurations: config)
         let today = d0(9, 22, 12)
         let store = CycleStore(context: container.mainContext, now: { today }, calendar: calendar)
-        let settings = UserSettings(birthYear: 1995, menarcheAge: 13, cycleLength: 28, periodLength: 5)
+        let settings = UserSettings(birthDate: birthday(1995), menarcheYear: 2008, cycleLength: 28, periodLength: 5)
 
         try store.startCycle(at: d0(8, 28, 8))
         try store.stopCycle(at: d0(9, 1, 20))

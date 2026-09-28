@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<style>
+  body{margin:0}
+  .tabbtn{background:none;border:none;cursor:pointer;padding:0}
+  .actionbtn{border:none;cursor:pointer;font-family:inherit}
+  @keyframes shimmer{0%{filter:hue-rotate(0deg) blur(22px)}50%{filter:hue-rotate(28deg) blur(22px)}100%{filter:hue-rotate(0deg) blur(22px)}}
+</style>
+</helmet>
+<div style="display:flex;gap:24px;flex-wrap:wrap">
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390,844" title="{{ deviceTitle }}">
+  <sc-if value="{{ isToday }}" hint-placeholder-val="{{ true }}">
+    <div onTouchStart="{{ swipeStart }}" onTouchEnd="{{ swipeEndToCalendar }}" style="display:flex;flex-direction:column;align-items:center;height:100%;background:{{ bg }};font-family:-apple-system,'SF Pro Text',Helvetica,Arial,sans-serif;box-sizing:border-box;padding:28px 24px 0">
+      <div style="position:relative;width:272px;height:272px;margin-top:18px">
+        <div style="position:absolute;inset:-14px;border-radius:50%;filter:blur(22px);opacity:{{ glowOpacity }};background:{{ ringGradient }};animation:{{ shimmerAnim }};-webkit-mask-image:radial-gradient(closest-side, transparent 74%, black 77%);mask-image:radial-gradient(closest-side, transparent 74%, black 77%)"></div>
+        <div style="position:absolute;inset:0;border-radius:50%;background:{{ ringGradient }};-webkit-mask-image:radial-gradient(closest-side, transparent 76%, black 79%);mask-image:radial-gradient(closest-side, transparent 76%, black 79%)"></div>
+        <svg width="272" height="272" style="position:absolute;inset:0">
+          <circle cx="136" cy="136" r="124" pathLength="360" fill="none" stroke="{{ periodOverlayColor }}" stroke-width="24" stroke-dasharray="{{ periodDashArray }}" transform="rotate(-90 136 136)" style="filter:{{ periodOverlayFilter }};transition:stroke .2s"></circle>
+          <sc-for list="{{ periodTicks }}" as="tick" hint-placeholder-count="5">
+            <line x1="{{ tick.x1 }}" y1="{{ tick.y1 }}" x2="{{ tick.x2 }}" y2="{{ tick.y2 }}" stroke="{{ cardBg }}" stroke-width="2.5" stroke-linecap="round"></line>
+          </sc-for>
+        </svg>
+        <div style="position:absolute;inset:22px;border-radius:50%;background:{{ cardBg }};box-shadow:inset 0 1px 3px {{ shadowColor }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+          <div style="display:flex;align-items:baseline;gap:2px">
+            <span style="font-size:64px;font-weight:400;color:{{ ink }};font-variant-numeric:tabular-nums;letter-spacing:-2px">{{ currentDay }}</span>
+            <span style="font-size:22px;font-weight:400;color:{{ inkMuted }};font-variant-numeric:tabular-nums">/{{ cycleLength }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:40px;display:flex;justify-content:center;align-items:center;gap:18px;width:100%">
+        <button class="actionbtn" onClick="{{ undo }}" aria-label="Отменить" disabled="{{ undoDisabled }}" style="width:48px;height:48px;border-radius:50%;background:{{ chipBg }};opacity:{{ undoOpacity }};display:flex;align-items:center;justify-content:center">
+          <svg width="20" height="20" viewBox="0 0 20 20"><path d="M6 4L2 8L6 12" fill="none" stroke="{{ inkFaint }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2 8H12C15 8 17 10 17 13C17 15 15.5 16.5 14 17" fill="none" stroke="{{ inkFaint }}" stroke-width="2" stroke-linecap="round"></path></svg>
+        </button>
+        <sc-if value="{{ isPeriodActive }}" hint-placeholder-val="{{ false }}">
+          <button class="actionbtn" onClick="{{ endPeriod }}" aria-label="Закончились месячные" style="width:76px;height:76px;border-radius:50%;background:{{ endBtnBg }};display:flex;align-items:center;justify-content:center">
+            <svg width="26" height="26" viewBox="0 0 26 26"><rect x="4" y="4" width="18" height="18" rx="5" fill="none" stroke="{{ endIconColor }}" stroke-width="2.2"></rect><rect x="9" y="9" width="8" height="8" rx="1.5" fill="{{ endIconColor }}"></rect></svg>
+          </button>
+        </sc-if>
+        <sc-if value="{{ isPeriodInactive }}" hint-placeholder-val="{{ true }}">
+          <div style="position:relative">
+            <sc-if value="{{ showBackdatePicker }}" hint-placeholder-val="{{ false }}">
+              <div onClick="{{ hideBackdatePicker }}" style="position:fixed;inset:0;z-index:5"></div>
+              <div style="position:absolute;right:88px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:8px;z-index:6">
+                <button class="actionbtn" onClick="{{ startCycleAt2 }}" style="width:52px;height:52px;border-radius:50%;background:{{ cardBg }};box-shadow:0 4px 12px {{ shadowColor }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px">
+                  <svg width="17" height="17" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="{{ ink }}" stroke-width="1.6"></circle><text x="8" y="11" font-size="8.5" text-anchor="middle" fill="{{ ink }}">-2</text></svg>
+                  <span style="font-size:9px;color:{{ inkMuted }}">Позавчера</span>
+                </button>
+                <button class="actionbtn" onClick="{{ startCycleAt1 }}" style="width:58px;height:58px;border-radius:50%;background:{{ cardBg }};box-shadow:0 4px 12px {{ shadowColor }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px">
+                  <svg width="19" height="19" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="{{ ink }}" stroke-width="1.6"></circle><text x="8" y="11" font-size="9" text-anchor="middle" fill="{{ ink }}">-1</text></svg>
+                  <span style="font-size:10px;color:{{ inkMuted }}">Вчера</span>
+                </button>
+              </div>
+            </sc-if>
+            <button class="actionbtn" onClick="{{ startCycle }}" onMouseDown="{{ pressStart }}" onMouseUp="{{ pressEnd }}" onMouseLeave="{{ pressEnd }}" onTouchStart="{{ pressStart }}" onTouchEnd="{{ pressEnd }}" aria-label="Начались месячные" style="width:76px;height:76px;border-radius:50%;background:{{ startBtnBg }};display:flex;align-items:center;justify-content:center;position:relative;z-index:6">
+              <svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 2C13 2 5 12.5 5 17.5C5 22 8.5 24.5 13 24.5C17.5 24.5 21 22 21 17.5C21 12.5 13 2 13 2Z" fill="{{ dotAccent }}"></path></svg>
+            </button>
+          </div>
+        </sc-if>
+        <div style="width:48px"></div>
+      </div>
+
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:56px;align-items:center;padding-bottom:14px">
+        <button class="tabbtn" onClick="{{ goToday }}">
+          <svg width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="13" r="10" fill="none" stroke="{{ ink }}" stroke-width="2.4"></circle></svg>
+        </button>
+        <button class="tabbtn" onClick="{{ goProfile }}">
+          <svg width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="9" r="4.5" fill="none" stroke="{{ inkFaint }}" stroke-width="2.2"></circle><path d="M4 22c0-5 4-8 9-8s9 3 9 8" fill="none" stroke="{{ inkFaint }}" stroke-width="2.2" stroke-linecap="round"></path></svg>
+        </button>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isCalendar }}" hint-placeholder-val="{{ false }}">
+    <div onTouchStart="{{ swipeStart }}" onTouchEnd="{{ swipeEndCalendarNav }}" style="display:flex;flex-direction:column;height:100%;background:{{ bg }};font-family:-apple-system,'SF Pro Text',Helvetica,Arial,sans-serif;box-sizing:border-box;padding:28px 20px 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px 18px">
+        <button class="actionbtn" onClick="{{ prevMonth }}" style="width:36px;height:36px;border-radius:50%;background:{{ chipBg }};display:flex;align-items:center;justify-content:center">
+          <svg width="14" height="14" viewBox="0 0 14 14"><path d="M9 2L3 7L9 12" fill="none" stroke="{{ ink }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+        <span style="font-size:18px;font-weight:600;color:{{ ink }};letter-spacing:-0.2px">{{ calendarMonthLabel }}</span>
+        <button class="actionbtn" onClick="{{ nextMonth }}" style="width:36px;height:36px;border-radius:50%;background:{{ chipBg }};display:flex;align-items:center;justify-content:center">
+          <svg width="14" height="14" viewBox="0 0 14 14"><path d="M5 2L11 7L5 12" fill="none" stroke="{{ ink }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px 0;margin-bottom:6px">
+        <sc-for list="{{ weekdayLabels }}" as="wd" hint-placeholder-count="7">
+          <div style="text-align:center;font-size:11px;color:{{ inkFaint }}">{{ wd }}</div>
+        </sc-for>
+      </div>
+      <sc-for list="{{ calendarWeeks }}" as="week" hint-placeholder-count="5">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px 0;margin-bottom:6px">
+          <sc-for list="{{ week }}" as="day" hint-placeholder-count="7">
+            <button class="actionbtn" onClick="{{ day.onTap }}" style="display:flex;align-items:center;justify-content:center;height:40px;background:none">
+              <div style="position:relative;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:{{ day.monthOpacity }};background:{{ day.dayBg }};border:{{ day.dayBorder }};box-shadow:{{ day.todayRing }}">
+                <span style="font-size:14px;color:{{ day.dayColor }};font-variant-numeric:tabular-nums">{{ day.label }}</span>
+              </div>
+            </button>
+          </sc-for>
+        </div>
+      </sc-for>
+      <div style="flex:1"></div>
+      <sc-if value="{{ selectedDate }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ closeDayMenu }}" style="position:fixed;inset:0;z-index:5"></div>
+        <div style="position:fixed;left:{{ selectedPosLeft }};top:{{ selectedPosTop }};transform:translate(-50%,-50%);z-index:6;display:flex;align-items:center;gap:8px">
+          <sc-if value="{{ selectedIsFact }}" hint-placeholder-val="{{ false }}">
+            <button class="actionbtn" onClick="{{ confirmDeleteDay }}" style="width:52px;height:52px;border-radius:50%;background:{{ cardBg }};box-shadow:0 4px 12px {{ shadowColor }};display:flex;align-items:center;justify-content:center">
+              <svg width="20" height="20" viewBox="0 0 18 18"><path d="M4 4L14 14M14 4L4 14" stroke="oklch(0.55 0.18 25)" stroke-width="2" stroke-linecap="round"></path></svg>
+            </button>
+          </sc-if>
+          <sc-if value="{{ !selectedIsFact }}" hint-placeholder-val="{{ true }}">
+            <button class="actionbtn" onClick="{{ confirmAddDay }}" style="width:52px;height:52px;border-radius:50%;background:{{ cardBg }};box-shadow:0 4px 12px {{ shadowColor }};display:flex;align-items:center;justify-content:center">
+              <svg width="20" height="20" viewBox="0 0 18 18"><path d="M9 3V15M3 9H15" stroke="{{ dotAccent }}" stroke-width="2" stroke-linecap="round"></path></svg>
+            </button>
+          </sc-if>
+        </div>
+      </sc-if>
+      <div style="display:flex;align-items:center;justify-content:center;gap:20px;padding-bottom:14px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:10px;height:10px;border-radius:50%;background:{{ dotAccent }}"></div>
+          <span style="font-size:12px;color:{{ inkMuted }}">Факт</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:10px;height:10px;border-radius:50%;border:1.5px dashed {{ dotAccent }}"></div>
+          <span style="font-size:12px;color:{{ inkMuted }}">Прогноз</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isProfile }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;height:100%;background:{{ bg }};font-family:-apple-system,'SF Pro Text',Helvetica,Arial,sans-serif;box-sizing:border-box;padding:28px 20px 0">
+      <div style="font-size:28px;font-weight:600;color:{{ ink }};letter-spacing:-0.5px;padding:0 4px 20px">Профиль</div>
+      <div style="display:flex;flex-direction:column;gap:1px;border-radius:18px;overflow:hidden;background:{{ cardBg }};margin-bottom:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px">
+          <span style="font-size:16px;color:{{ ink }}">Дата рождения</span>
+          <input type="date" value="{{ birthDate }}" onChange="{{ setBirthDate }}" style="border:none;background:{{ chipBg }};color:{{ ink }};font-size:15px;border-radius:8px;padding:6px 10px;font-family:inherit">
+        </div>
+        <div style="height:1px;background:{{ divider }};margin:0 18px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px">
+          <span style="font-size:16px;color:{{ ink }}">Год начала менструаций</span>
+          <div style="display:flex;align-items:center;gap:14px">
+            <button class="actionbtn" onClick="{{ decMenarche }}" style="width:30px;height:30px;border-radius:50%;background:{{ chipBg }};color:{{ ink }};font-size:18px">–</button>
+            <span style="font-size:17px;font-variant-numeric:tabular-nums;color:{{ ink }};width:44px;text-align:center">{{ menarcheYear }}</span>
+            <button class="actionbtn" onClick="{{ incMenarche }}" style="width:30px;height:30px;border-radius:50%;background:{{ chipBg }};color:{{ ink }};font-size:18px">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:1px;border-radius:18px;overflow:hidden;background:{{ cardBg }}">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px">
+          <span style="font-size:16px;color:{{ ink }}">Длительность цикла</span>
+          <div style="display:flex;align-items:center;gap:14px">
+            <button class="actionbtn" onClick="{{ decCycle }}" style="width:30px;height:30px;border-radius:50%;background:{{ chipBg }};color:{{ ink }};font-size:18px">–</button>
+            <span style="font-size:17px;font-variant-numeric:tabular-nums;color:{{ ink }};width:20px;text-align:center">{{ cycleLength }}</span>
+            <button class="actionbtn" onClick="{{ incCycle }}" style="width:30px;height:30px;border-radius:50%;background:{{ chipBg }};color:{{ ink }};font-size:18px">+</button>
+          </div>
+        </div>
+        <div style="height:1px;background:{{ divider }};margin:0 18px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px">
+          <span style="font-size:16px;color:{{ ink }}">Длительность менструации</span>
+          <div style="display:flex;align-items:center;gap:14px">
+            <button class="actionbtn" onClick="{{ decPeriod }}" style="width:30px;height:30px;border-radius:50%;background:{{ chipBg }};color:{{ ink }};font-size:18px">–</button>
+            <span style="font-size:17px;font-variant-numeric:tabular-nums;color:{{ ink }};width:20px;text-align:center">{{ periodLength }}</span>
+            <button class="actionbtn" onClick="{{ incPeriod }}" style="width:30px;height:30px;border-radius:50%;background:{{ chipBg }};color:{{ ink }};font-size:18px">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:1px;border-radius:18px;overflow:hidden;background:{{ cardBg }};margin-top:18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px">
+          <span style="font-size:16px;color:{{ ink }}">Напоминания</span>
+          <button class="actionbtn" onClick="{{ toggleReminders }}" style="width:48px;height:28px;border-radius:14px;background:{{ reminderTrackColor }};position:relative;transition:background .15s">
+            <div style="position:absolute;top:2px;left:{{ reminderKnobLeft }};width:24px;height:24px;border-radius:50%;background:white;box-shadow:0 1px 2px oklch(0 0 0 / 0.2);transition:left .15s"></div>
+          </button>
+        </div>
+      </div>
+
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:56px;align-items:center;justify-content:center;padding-bottom:14px">
+        <button class="tabbtn" onClick="{{ goToday }}">
+          <svg width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="13" r="10" fill="none" stroke="{{ inkFaint }}" stroke-width="2.4"></circle></svg>
+        </button>
+        <button class="tabbtn" onClick="{{ goProfile }}">
+          <svg width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="9" r="4.5" fill="none" stroke="{{ ink }}" stroke-width="2.2"></circle><path d="M4 22c0-5 4-8 9-8s9 3 9 8" fill="none" stroke="{{ ink }}" stroke-width="2.2" stroke-linecap="round"></path></svg>
+        </button>
+      </div>
+    </div>
+  </sc-if>
+</x-import>
+
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" hint-size="390,844" title="Календарь">
+  <div style="display:flex;flex-direction:column;height:100%;background:{{ bg }};font-family:-apple-system,'SF Pro Text',Helvetica,Arial,sans-serif;box-sizing:border-box;padding:28px 20px 0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px 18px">
+      <button class="actionbtn" onClick="{{ prevMonth }}" style="width:36px;height:36px;border-radius:50%;background:{{ chipBg }};display:flex;align-items:center;justify-content:center">
+        <svg width="14" height="14" viewBox="0 0 14 14"><path d="M9 2L3 7L9 12" fill="none" stroke="{{ ink }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+      <span style="font-size:18px;font-weight:600;color:{{ ink }};letter-spacing:-0.2px">{{ calendarMonthLabel }}</span>
+      <button class="actionbtn" onClick="{{ nextMonth }}" style="width:36px;height:36px;border-radius:50%;background:{{ chipBg }};display:flex;align-items:center;justify-content:center">
+        <svg width="14" height="14" viewBox="0 0 14 14"><path d="M5 2L11 7L5 12" fill="none" stroke="{{ ink }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px 0;margin-bottom:6px">
+      <sc-for list="{{ weekdayLabels }}" as="wd" hint-placeholder-count="7">
+        <div style="text-align:center;font-size:11px;color:{{ inkFaint }}">{{ wd }}</div>
+      </sc-for>
+    </div>
+    <sc-for list="{{ calendarWeeks }}" as="week" hint-placeholder-count="5">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px 0;margin-bottom:6px">
+        <sc-for list="{{ week }}" as="day" hint-placeholder-count="7">
+          <div style="display:flex;align-items:center;justify-content:center;height:40px">
+            <div style="position:relative;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:{{ day.monthOpacity }};background:{{ day.dayBg }};border:{{ day.dayBorder }};box-shadow:{{ day.todayRing }}">
+              <span style="font-size:14px;color:{{ day.dayColor }};font-variant-numeric:tabular-nums">{{ day.label }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+    <div style="flex:1"><div style="display:flex;align-items:center;justify-content:center;gap:12px;padding-bottom:8px">
+      <div style="width:34px;height:34px;border-radius:50%;background:{{ dotAccent }};display:flex;align-items:center;justify-content:center;font-size:14px;color:white">12</div>
+      <div style="width:52px;height:52px;border-radius:50%;background:{{ cardBg }};box-shadow:0 4px 12px {{ shadowColor }};display:flex;align-items:center;justify-content:center">
+        <svg width="20" height="20" viewBox="0 0 18 18"><path d="M4 4L14 14M14 4L4 14" stroke="oklch(0.55 0.18 25)" stroke-width="2" stroke-linecap="round"></path></svg>
+      </div>
+    </div></div>
+    
+    <div style="display:flex;align-items:center;justify-content:center;gap:20px;padding-bottom:14px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <div style="width:10px;height:10px;border-radius:50%;background:{{ dotAccent }}"></div>
+        <span style="font-size:12px;color:{{ inkMuted }}">Факт</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div style="width:10px;height:10px;border-radius:50%;border:1.5px dashed {{ dotAccent }}"></div>
+        <span style="font-size:12px;color:{{ inkMuted }}">Прогноз</span>
+      </div>
+    </div>
+  </div>
+</x-import>
+</div>
+
+<div style="display:flex;gap:28px;padding:32px;flex-wrap:wrap;align-items:flex-start;background:oklch(0.96 0.005 45)">
+  <sc-for list="{{ compareScenarios }}" as="sc" hint-placeholder-count="3">
+    <div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;isolation:isolate">
+      <div style="font-size:12px;font-weight:600;color:oklch(0.5 0.01 45);text-transform:uppercase;letter-spacing:0.04em">{{ sc.caption }}</div>
+      <div style="position:relative;width:180px;height:180px">
+        <div style="position:absolute;inset:-9px;border-radius:50%;filter:blur(14px);opacity:{{ sc.glowOpacity }};background:{{ sc.ringGradient }};animation:{{ sc.shimmerAnim }};-webkit-mask-image:radial-gradient(closest-side, transparent 74%, black 77%);mask-image:radial-gradient(closest-side, transparent 74%, black 77%)"></div>
+        <div style="position:absolute;inset:0;border-radius:50%;background:{{ sc.ringGradient }};-webkit-mask-image:radial-gradient(closest-side, transparent 76%, black 79%);mask-image:radial-gradient(closest-side, transparent 76%, black 79%)"></div>
+        <svg width="180" height="180" style="position:absolute;inset:0">
+          <circle cx="90" cy="90" r="82" pathLength="360" fill="none" stroke="{{ sc.periodOverlayColor }}" stroke-width="16" stroke-dasharray="{{ sc.periodDashArray }}" transform="rotate(-90 90 90)" style="filter:{{ sc.periodOverlayFilter }}"></circle>
+          <sc-for list="{{ sc.periodTicks }}" as="tick" hint-placeholder-count="5">
+            <line x1="{{ tick.x1 }}" y1="{{ tick.y1 }}" x2="{{ tick.x2 }}" y2="{{ tick.y2 }}" stroke="{{ sc.cardBg }}" stroke-width="2" stroke-linecap="round"></line>
+          </sc-for>
+        </svg>
+        <div style="position:absolute;inset:15px;border-radius:50%;background:{{ sc.cardBg }};box-shadow:inset 0 1px 3px {{ sc.shadowColor }};display:flex;align-items:center;justify-content:center;gap:2px">
+          <span style="font-size:40px;font-weight:400;color:{{ sc.ink }};font-variant-numeric:tabular-nums;letter-spacing:-1px">{{ sc.currentDay }}</span>
+          <span style="font-size:15px;font-weight:400;color:{{ sc.inkMuted }};font-variant-numeric:tabular-nums">/{{ sc.cycleLength }}</span>
+        </div>
+      </div>
+      <sc-if value="{{ sc.showPicker }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;bottom:200px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:3px;background:{{ sc.cardBg }};border-radius:12px;padding:5px;box-shadow:0 4px 16px {{ sc.shadowColor }};z-index:2;width:150px">
+          <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;color:{{ sc.ink }};font-size:11px">
+            <svg width="14" height="14" viewBox="0 0 16 16" style="flex-shrink:0"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle><circle cx="8" cy="8" r="2" fill="currentColor"></circle></svg>
+            Сегодня
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;color:{{ sc.ink }};font-size:11px">
+            <svg width="14" height="14" viewBox="0 0 16 16" style="flex-shrink:0"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle><text x="8" y="11" font-size="9" text-anchor="middle" fill="currentColor">-1</text></svg>
+            Вчера
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;color:{{ sc.ink }};font-size:11px">
+            <svg width="14" height="14" viewBox="0 0 16 16" style="flex-shrink:0"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle><text x="8" y="11" font-size="9" text-anchor="middle" fill="currentColor">-2</text></svg>
+            Позавчера
+          </div>
+        </div>
+      </sc-if>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:50%;background:{{ compareChipBg }};display:flex;align-items:center;justify-content:center">
+          <svg width="16" height="16" viewBox="0 0 20 20"><path d="M6 4L2 8L6 12" fill="none" stroke="{{ compareInkFaint }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2 8H12C15 8 17 10 17 13C17 15 15.5 16.5 14 17" fill="none" stroke="{{ compareInkFaint }}" stroke-width="2" stroke-linecap="round"></path></svg>
+        </div>
+        <div style="width:56px;height:56px;border-radius:50%;background:{{ sc.endBtnBg }};display:flex;align-items:center;justify-content:center">
+          <svg width="20" height="20" viewBox="0 0 26 26"><rect x="4" y="4" width="18" height="18" rx="5" fill="none" stroke="{{ sc.endIconColor }}" stroke-width="2.2"></rect><rect x="9" y="9" width="8" height="8" rx="1.5" fill="{{ sc.endIconColor }}"></rect></svg>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:402,&quot;height&quot;:1150},&quot;palette&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;warm&quot;,&quot;options&quot;:[&quot;warm&quot;,&quot;lavender&quot;,&quot;sage&quot;,&quot;dusk&quot;],&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;light&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;tsType&quot;:&quot;string&quot;}}">
+const PALETTES = {
+  warm:     { hue: 40,  glow: 'oklch(0.72 0.15 25)' },
+  lavender: { hue: 300, glow: 'oklch(0.68 0.13 300)' },
+  sage:     { hue: 145, glow: 'oklch(0.65 0.1 145)' },
+  dusk:     { hue: 250, glow: 'oklch(0.62 0.1 250)' },
+};
+
+class Component extends DCLogic {
+  state = {
+    screen: 'today',
+    cycleLength: 28,
+    periodLength: 5,
+    currentDay: 14,
+    remindersOn: true,
+    isPeriodActive: false,
+    history: null,
+    showBackdatePicker: false,
+    birthDate: '1995-06-15',
+    menarcheYear: 2008,
+    calendarMonthOffset: 0,
+    manualOverrides: {},
+    selectedDate: null,
+    selectedIsFact: false,
+  };
+
+  selectDay = (dateStr, isFact, e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    this.setState({ selectedDate: dateStr, selectedIsFact: isFact, selectedPos: { x: r.left + r.width / 2, y: r.top + r.height / 2 } });
+  };
+  closeDayMenu = () => this.setState({ selectedDate: null });
+  confirmAddDay = () => this.setState(s => ({ manualOverrides: { ...s.manualOverrides, [s.selectedDate]: true }, selectedDate: null }));
+  confirmDeleteDay = () => this.setState(s => ({ manualOverrides: { ...s.manualOverrides, [s.selectedDate]: false }, selectedDate: null }));
+
+  setBirthDate = (e) => this.setState({ birthDate: e.target.value });
+  incMenarche = () => this.setState(s => ({ menarcheYear: Math.min(2026, s.menarcheYear + 1) }));
+  decMenarche = () => this.setState(s => ({ menarcheYear: Math.max(1970, s.menarcheYear - 1) }));
+
+  touchX = 0; touchY = 0;
+  swipeStart = (e) => { const t = e.touches[0]; this.touchX = t.clientX; this.touchY = t.clientY; };
+  swipeEndToCalendar = (e) => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - this.touchX, dy = t.clientY - this.touchY;
+    if (dx > 60 && Math.abs(dy) < 40) this.setState({ screen: 'calendar' });
+  };
+  swipeEndCalendarNav = (e) => {
+    const t = e.changedTouches[0];
+    const dx = t.clientX - this.touchX, dy = t.clientY - this.touchY;
+    if (Math.abs(dy) > 40) return;
+    if (dx < -60) this.setState(s => ({ calendarMonthOffset: s.calendarMonthOffset + 1 }));
+    else if (dx > 60) this.setState(s => ({ calendarMonthOffset: s.calendarMonthOffset - 1 }));
+  };
+  prevMonth = () => this.setState(s => ({ calendarMonthOffset: s.calendarMonthOffset - 1 }));
+  nextMonth = () => this.setState(s => ({ calendarMonthOffset: s.calendarMonthOffset + 1 }));
+
+  buildCalendar(monthOffset, currentDay, cycleLength, periodLength, isDark, h, ink, overrides) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const cycleStart = new Date(today); cycleStart.setDate(cycleStart.getDate() - (currentDay - 1));
+    const viewMonth = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+    const monthLabel = viewMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    const firstWeekday = (viewMonth.getDay() + 6) % 7;
+    const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < firstWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(viewMonth.getFullYear(), viewMonth.getMonth(), d));
+    while (cells.length % 7 !== 0) cells.push(null);
+    const dotAccent = isDark ? `oklch(0.75 0.19 ${h})` : `oklch(0.72 0.15 ${h===40?25:h})`;
+    const weeks = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      const week = cells.slice(i, i + 7).map(date => {
+        if (!date) return { label: '', monthOpacity: 0, dayBg: 'transparent', dayBorder: 'none', dayColor: 'transparent', todayRing: 'none', onTap: null };
+        const dateStr = date.toISOString().slice(0, 10);
+        const diffDays = Math.floor((date - cycleStart) / 86400000);
+        const cyclePos = ((diffDays % cycleLength) + cycleLength) % cycleLength;
+        const natural = cyclePos < periodLength;
+        const isFuture = date > today;
+        const override = overrides[dateStr];
+        const isPeriodDay = override !== undefined ? override : natural;
+        const isFact = override === true ? true : (override === undefined && natural && !isFuture);
+        const isToday = date.getTime() === today.getTime();
+        return {
+          label: String(date.getDate()),
+          monthOpacity: 1,
+          dayBg: isFact ? dotAccent : 'transparent',
+          dayBorder: (!isFact && isPeriodDay) ? `1.5px dashed ${dotAccent}` : 'none',
+          dayColor: isFact ? (isDark ? 'oklch(0.15 0.02 0)' : 'white') : ink,
+          todayRing: isToday ? `0 0 0 2px ${dotAccent}` : 'none',
+          onTap: (e) => this.selectDay(dateStr, isFact, e),
+        };
+      });
+      weeks.push(week);
+    }
+    return { monthLabel, weeks };
+  }
+
+  pressTimer = null;
+  pressStart = () => { this.pressTimer = setTimeout(() => this.setState({ showBackdatePicker: true }), 450); };
+  pressEnd = () => { clearTimeout(this.pressTimer); };
+
+  startCycle = () => this.setState(s => ({
+    currentDay: 1, isPeriodActive: true, showBackdatePicker: false,
+    history: { currentDay: s.currentDay, periodLength: s.periodLength, isPeriodActive: s.isPeriodActive },
+  }));
+  startCycleAtOffset = (daysAgo) => this.setState(s => ({
+    currentDay: 1 + daysAgo, isPeriodActive: true, showBackdatePicker: false,
+    history: { currentDay: s.currentDay, periodLength: s.periodLength, isPeriodActive: s.isPeriodActive },
+  }));
+  startCycleAt0 = () => this.startCycleAtOffset(0);
+  startCycleAt1 = () => this.startCycleAtOffset(1);
+  startCycleAt2 = () => this.startCycleAtOffset(2);
+  hideBackdatePicker = () => this.setState({ showBackdatePicker: false });
+  endPeriod = () => this.setState(s => ({
+    periodLength: s.currentDay, isPeriodActive: false,
+    history: { currentDay: s.currentDay, periodLength: s.periodLength, isPeriodActive: s.isPeriodActive },
+  }));
+  undo = () => this.setState(s => s.history ? { ...s.history, history: null } : {});
+  goToday = () => this.setState({ screen: 'today' });
+  goProfile = () => this.setState({ screen: 'profile' });
+  incCycle = () => this.setState(s => ({ cycleLength: Math.min(45, s.cycleLength + 1) }));
+  decCycle = () => this.setState(s => ({ cycleLength: Math.max(15, s.cycleLength - 1) }));
+  incPeriod = () => this.setState(s => ({ periodLength: Math.min(12, s.periodLength + 1) }));
+  decPeriod = () => this.setState(s => ({ periodLength: Math.max(1, s.periodLength - 1) }));
+  toggleReminders = () => this.setState(s => ({ remindersOn: !s.remindersOn }));
+
+  computeRing(currentDay, cycleLength, periodLength, isPeriodActive) {
+    const pal = PALETTES[this.props.palette] || PALETTES.warm;
+    const h = pal.hue;
+    const isDark = this.props.theme === 'dark';
+    const progress = Math.min(1, currentDay / cycleLength);
+    const elapsedDeg = progress * 360;
+    const dim = isDark ? `oklch(0.26 0.02 ${h})` : `oklch(0.9 0.02 ${h})`;
+    const solidGlow = isDark ? `oklch(0.75 0.19 ${h})` : pal.glow;
+    const ringGradient = isDark
+      ? `conic-gradient(from 0deg, oklch(0.75 0.19 ${h}) 0deg, oklch(0.78 0.2 ${h+40}) ${elapsedDeg*0.4}deg, oklch(0.72 0.2 ${h-40}) ${elapsedDeg*0.8}deg, oklch(0.75 0.19 ${h}) ${elapsedDeg}deg, ${dim} ${Math.min(360, elapsedDeg + 8)}deg, ${dim} 360deg)`
+      : `conic-gradient(from 0deg, ${solidGlow} 0deg, ${solidGlow} ${elapsedDeg}deg, ${dim} ${Math.min(360, elapsedDeg + 8)}deg, ${dim} 360deg)`;
+    const cx = 136, cy = 136;
+    const periodEndDeg = Math.min(periodLength, cycleLength) / cycleLength * 360;
+    const periodDashArray = `${periodEndDeg} ${360 - periodEndDeg}`;
+    const periodOverlayColor = isPeriodActive ? `oklch(0.6 0.2 ${h})` : (isDark ? `oklch(0.4 0.05 ${h})` : `oklch(0.9 0.05 ${h})`);
+    const periodOverlayFilter = isPeriodActive ? `drop-shadow(0 0 8px oklch(0.6 0.2 ${h} / 0.7))` : 'none';
+    const periodTicks = [];
+    for (let i = 1; i <= Math.min(periodLength, cycleLength); i++) {
+      const rad = (i / cycleLength * 360) * Math.PI / 180;
+      const sin = Math.sin(rad), cos = Math.cos(rad);
+      periodTicks.push({ x1: cx + 111 * sin, y1: cy - 111 * cos, x2: cx + 137 * sin, y2: cy - 137 * cos });
+    }
+    return {
+      currentDay, cycleLength, periodLength,
+      ringGradient, periodDashArray, periodOverlayColor, periodOverlayFilter, periodTicks,
+      glowOpacity: isDark ? 0.85 : 0.55,
+      shimmerAnim: isDark ? 'shimmer 6s linear infinite' : 'none',
+      bg: isDark ? `oklch(0.17 0.045 ${h})` : `oklch(0.975 0.012 ${h})`,
+      cardBg: isDark ? `oklch(0.24 0.05 ${h})` : `oklch(0.99 0.005 ${h})`,
+      chipBg: isDark ? `oklch(0.3 0.05 ${h})` : `oklch(0.94 0.01 ${h})`,
+      divider: isDark ? `oklch(0.32 0.045 ${h})` : `oklch(0.93 0.01 ${h})`,
+      shadowColor: isDark ? `oklch(0.05 0.01 ${h} / 0.6)` : `oklch(0.85 0.02 ${h} / 0.4)`,
+      ink: isDark ? `oklch(0.94 0.01 ${h})` : `oklch(0.3 0.02 ${h})`,
+      inkSoft: isDark ? `oklch(0.85 0.01 ${h})` : `oklch(0.4 0.02 ${h})`,
+      inkMuted: isDark ? `oklch(0.65 0.02 ${h})` : `oklch(0.62 0.02 ${h})`,
+      inkFaint: isDark ? `oklch(0.55 0.02 ${h})` : `oklch(0.7 0.02 ${h})`,
+      dotAccent: solidGlow,
+      dotMuted: isDark ? `oklch(0.35 0.02 ${h})` : `oklch(0.85 0.02 ${h})`,
+      startBtnBg: isDark ? `oklch(0.28 0.03 ${h})` : `oklch(0.94 0.03 ${h})`,
+      endBtnBg: isDark ? `oklch(0.28 0.03 ${h})` : `oklch(0.94 0.03 ${h})`,
+      endIconColor: solidGlow,
+      reminderTrackColor: solidGlow,
+    };
+  }
+
+  renderVals() {
+    const { screen, cycleLength, periodLength, currentDay, remindersOn, isPeriodActive, history, showBackdatePicker, birthDate, menarcheYear, calendarMonthOffset, manualOverrides, selectedDate, selectedIsFact, selectedPos } = this.state;
+    const r = this.computeRing(currentDay, cycleLength, periodLength, isPeriodActive);
+    const rDark = this.props.theme === 'dark';
+    const pal2 = PALETTES[this.props.palette] || PALETTES.warm;
+    const cal = this.buildCalendar(calendarMonthOffset, currentDay, cycleLength, periodLength, rDark, pal2.hue, r.ink, manualOverrides);
+    const selectedDateLabel = selectedDate ? new Date(selectedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '';
+    const compareScenarios = [
+      { caption: 'НАЧАЛО', ...this.computeRing(1, 28, 5, true) },
+      { caption: 'ДОЛГОЕ НАЖАТИЕ', ...this.computeRing(14, 28, 5, false), showPicker: true },
+      { caption: 'СЕЙЧАС', ...this.computeRing(14, 28, 5, false) },
+      { caption: 'ОКОНЧАНИЕ', ...this.computeRing(27, 28, 5, false) },
+    ];
+    return {
+      deviceTitle: '',
+      isToday: screen === 'today',
+      isProfile: screen === 'profile',
+      isCalendar: screen === 'calendar',
+      weekdayLabels: ['Пн','Вт','Ср','Чт','Пт','Сб','Нд'],
+      calendarMonthLabel: cal.monthLabel,
+      calendarWeeks: cal.weeks,
+      swipeStart: this.swipeStart,
+      swipeEndToCalendar: this.swipeEndToCalendar,
+      swipeEndCalendarNav: this.swipeEndCalendarNav,
+      prevMonth: this.prevMonth,
+      nextMonth: this.nextMonth,
+      selectedDate,
+      selectedDateLabel,
+      selectedIsFact,
+      closeDayMenu: this.closeDayMenu,
+      confirmAddDay: this.confirmAddDay,
+      confirmDeleteDay: this.confirmDeleteDay,
+      exampleDayLabel: new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }),
+      selectedPosLeft: selectedPos ? `${selectedPos.x}px` : '0px',
+      selectedPosTop: selectedPos ? `${selectedPos.y}px` : '0px',
+      cycleLength: r.cycleLength,
+      periodLength,
+      currentDay: r.currentDay,
+      ringGradient: r.ringGradient,
+      isPeriodActive,
+      isPeriodInactive: !isPeriodActive,
+      bg: r.bg, cardBg: r.cardBg, chipBg: r.chipBg, divider: r.divider, shadowColor: r.shadowColor,
+      ink: r.ink, inkSoft: r.inkSoft, inkMuted: r.inkMuted, inkFaint: r.inkFaint,
+      dotAccent: r.dotAccent, dotMuted: r.dotMuted,
+      periodDashArray: r.periodDashArray, periodOverlayColor: r.periodOverlayColor, periodOverlayFilter: r.periodOverlayFilter, periodTicks: r.periodTicks,
+      glowOpacity: r.glowOpacity, shimmerAnim: r.shimmerAnim,
+      startBtnBg: r.startBtnBg, endBtnBg: r.endBtnBg, endIconColor: r.endIconColor,
+      compareScenarios,
+      compareChipBg: 'oklch(0.94 0.005 45)',
+      compareInkFaint: 'oklch(0.6 0.01 45)',
+      undo: this.undo,
+      undoDisabled: !history,
+      undoOpacity: history ? 1 : 0.35,
+      showBackdatePicker,
+      pressStart: this.pressStart,
+      pressEnd: this.pressEnd,
+      startCycleAt0: this.startCycleAt0,
+      startCycleAt1: this.startCycleAt1,
+      startCycleAt2: this.startCycleAt2,
+      hideBackdatePicker: this.hideBackdatePicker,
+      birthDate,
+      setBirthDate: this.setBirthDate,
+      menarcheYear,
+      incMenarche: this.incMenarche,
+      decMenarche: this.decMenarche,
+      startCycle: this.startCycle,
+      endPeriod: this.endPeriod,
+      goToday: this.goToday,
+      goProfile: this.goProfile,
+      incCycle: this.incCycle,
+      decCycle: this.decCycle,
+      incPeriod: this.incPeriod,
+      decPeriod: this.decPeriod,
+      toggleReminders: this.toggleReminders,
+      reminderTrackColor: remindersOn ? r.reminderTrackColor : (rDark ? `oklch(0.35 0.01 45)` : `oklch(0.88 0.01 45)`),
+      reminderKnobLeft: remindersOn ? '22px' : '2px',
+    };
+  }
+}
+
+</script>
+</body>
+</html>

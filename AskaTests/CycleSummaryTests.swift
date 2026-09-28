@@ -94,7 +94,7 @@ struct CycleSummaryStoreTests {
         let container = try ModelContainer(for: CycleEvent.self, configurations: config)
         let today = d(9, 14, 12)
         let store = CycleStore(context: container.mainContext, now: { today }, calendar: calendar)
-        let settings = UserSettings(birthYear: 1995, menarcheAge: 13, cycleLength: 28, periodLength: 4)
+        let settings = UserSettings(birthDate: birthday(1995), menarcheYear: 2008, cycleLength: 28, periodLength: 4)
 
         #expect(try store.summary(settings: settings).dayOfCycle == nil)
 
